@@ -17,6 +17,15 @@ class ApiClient:
         self.base_url = base_url or os.environ.get("KAIROS_SERVER_URL", DEFAULT_BASE_URL)
 
     def health(self) -> dict:
-        response = httpx.get(f"{self.base_url}/health")
+        response = httpx.get(f"{self.base_url}/health", timeout=5)
+        response.raise_for_status()
+        return response.json()
+
+    def send_message(self, sender: str, content: str) -> dict:
+        response = httpx.post(
+            f"{self.base_url}/messages",
+            json={"sender": sender, "content": content},
+            timeout=5,
+        )
         response.raise_for_status()
         return response.json()
