@@ -1,91 +1,69 @@
-import socket
 import sys
 
-import httpx
-from PySide6.QtWidgets import (
-    QApplication,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QPushButton,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 
-from client.api_client import ApiClient
-from client.api_client.client import DEFAULT_BASE_URL
+from client.settings import ClientSettings
+from client.viewmodels.home_viewmodel import HomeViewModel
+from client.viewmodels.login_viewmodel import LoginViewModel, Session
+from client.views.home_view import HomeView
+from client.views.login_view import LoginView
+
+#: How long closing the window may wait to tell the server the session is over.
+#: Short, because a host that has gone away would otherwise hold up closing.
+LOGOUT_ON_CLOSE_TIMEOUT = 2.0
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    """Shows the login screen, then the home screen once signed in."""
+
+    def __init__(self, settings: ClientSettings | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Kairos")
+        self.resize(480, 420)
 
-        self.api_client: ApiClient | None = None
+        self.settings = settings or ClientSettings()
+        self.login_viewmodel = LoginViewModel(parent=self)
+        self.login_view = LoginView(self.login_viewmodel, self.settings)
+        self.home_viewmodel: HomeViewModel | None = None
+        self.home_view: HomeView | None = None
 
-        self.host_input = QLineEdit(DEFAULT_BASE_URL)
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.clicked.connect(self._on_connect_clicked)
-        self.status_label = QLabel("Not connected")
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.login_view)
+        self.setCentralWidget(self.stack)
 
-        self.message_input = QLineEdit()
-        self.send_button = QPushButton("Send")
-        self.send_button.setEnabled(False)
-        self.send_button.clicked.connect(self._on_send_clicked)
+        self.login_viewmodel.signed_in.connect(self._show_home)
 
-        self.log = QTextEdit(readOnly=True)
+    def _show_home(self, session: Session) -> None:
+        self.home_viewmodel = HomeViewModel(session, parent=self)
+        self.home_view = HomeView(self.home_viewmodel)
+        self.home_viewmodel.signed_out.connect(self._show_login)
+        self.stack.addWidget(self.home_view)
+        self.stack.setCurrentWidget(self.home_view)
+        self.setWindowTitle(f"Kairos — {session.user['name']}")
 
-        host_row = QHBoxLayout()
-        host_row.addWidget(self.host_input)
-        host_row.addWidget(self.connect_button)
+    def _show_login(self) -> None:
+        if self.home_view is not None:
+            self.stack.removeWidget(self.home_view)
+            self.home_view.deleteLater()
+        if self.home_viewmodel is not None:
+            self.home_viewmodel.deleteLater()
+        self.home_view = None
+        self.home_viewmodel = None
 
-        message_row = QHBoxLayout()
-        message_row.addWidget(self.message_input)
-        message_row.addWidget(self.send_button)
+        self.login_view.reset_after_sign_out()
+        self.stack.setCurrentWidget(self.login_view)
+        self.setWindowTitle("Kairos")
 
-        layout = QVBoxLayout()
-        layout.addLayout(host_row)
-        layout.addWidget(self.status_label)
-        layout.addLayout(message_row)
-        layout.addWidget(self.log)
-
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-    def _on_connect_clicked(self) -> None:
-        base_url = self.host_input.text().strip()
-        client = ApiClient(base_url=base_url)
-        try:
-            client.health()
-        except httpx.HTTPError as exc:
-            self.api_client = None
-            self.send_button.setEnabled(False)
-            self.status_label.setText(f"Connection failed: {exc}")
-            return
-
-        self.api_client = client
-        self.send_button.setEnabled(True)
-        self.status_label.setText(f"Connected to {base_url}")
-
-    def _on_send_clicked(self) -> None:
-        if self.api_client is None:
-            return
-
-        content = self.message_input.text().strip()
-        if not content:
-            return
-
-        try:
-            self.api_client.send_message(sender=socket.gethostname(), content=content)
-        except httpx.HTTPError as exc:
-            self.log.append(f"Send failed: {exc}")
-            return
-
-        self.log.append(f"You: {content}")
-        self.message_input.clear()
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Closing while signed in also signs out, so the token stops working
+        on the server instead of staying valid for its full 14 days.
+        """
+        if self.home_viewmodel is not None:
+            client = self.home_viewmodel.session.client
+            client.timeout = LOGOUT_ON_CLOSE_TIMEOUT
+            client.logout()  # never raises
+        super().closeEvent(event)
 
 
 def main() -> None:

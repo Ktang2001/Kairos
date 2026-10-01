@@ -14,3 +14,11 @@ class User(Base):
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"))
 
     role: Mapped["Role"] = relationship()  # noqa: F821
+
+    #: Login sessions for this user. ``delete-orphan`` means deleting a user
+    #: through the ORM also removes their sessions; SQLite does not enforce
+    #: the ``sessions.user_id`` foreign key unless PRAGMA foreign_keys=ON,
+    #: so the ORM cascade is what actually performs this cleanup.
+    sessions: Mapped[list["Session"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan"
+    )

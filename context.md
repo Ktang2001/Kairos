@@ -36,7 +36,7 @@ Backend	Python + FastAPI	Runs as a normal process on whichever teammate's comput
 Database	SQLite	Owned entirely by the backend process — the client never touches the .db file directly, it only talks to the API. This avoids the file-locking risk of sharing a raw SQLite file over a network share.
 Data access	SQLAlchemy + Alembic for migrations	Don't hand-write schema migrations.
 Client↔Server	REST over HTTP (JSON) between the two computers	The client points at whichever machine/IP is hosting; make the host address configurable, not hardcoded.
-Auth	Not yet decided	See Open Questions.
+Auth	Server-side sessions	Random bearer token returned at login; only its SHA-256 hash is stored (sessions table). Logout revokes it (POST /auth/logout-all signs out everywhere); tokens expire after 14 days; at most 10 live sessions per user. Passwords hashed with scrypt; common/guessable passwords refused (shared/account_rules.py). Login locks an email+computer pair after 5 failures (1 min, doubling to 15 min). Every route except /health and register/login requires a session. Request bodies capped at 1 MB; /docs only reachable from the host computer.
 Testing	pytest (backend), pytest-qt (client)	Every new feature needs at least a smoke test.
 Formatting/Linting	black, ruff	Run before every commit.
 Networking (stretch only)	Additional external calls (Jitsi, etc.) layer on top of the existing FastAPI backend	No new architecture needed for stretch goals — just new routes/integrations.
@@ -71,12 +71,14 @@ Kairos/
 ├── README.md
 └── Rules.md                # this will be user specified be sure to follow this rule
 5. Data Model (initial sketch — expect this to evolve)
-User: id, name, email, password_hash, role
-Team: id, name, members (M2M to User)
-Project: id, team_id, name, description, status, created_at
-Task: id, project_id, title, description, assignee_id, due_date, status, created_at
-Subtask: id, task_id, title, assignee_id, due_date, status
-Role: defines what a user can view/edit (e.g., admin, project lead, member)
+User: id, name, email (unique, stored lowercase), password_hash, role_id → Role
+Team: id, name (unique, case-insensitive), lead_id → User, created_at, members (M2M to User via team_members). The lead is always a member; the lead and admins manage the team.
+Project: id, team_id → Team, name, description, status (active | completed), created_at. Managed by the team's lead/admins; visible to team members. Deleting a project deletes its tasks and subtasks; a team cannot be deleted while it has projects.
+Task: id, project_id → Project, title, description, assignee_id → User (must be on the team; cleared when they leave it), due_date, status (todo | in_progress | done, see shared/statuses.py), created_at, completed_at (set when marked done, cleared if reopened). Any team member may create/edit; lead/admins delete.
+Subtask: id, task_id → Task, title, assignee_id → User (same rules as Task), due_date, status (same values as Task)
+Dashboard (GET /dashboard, computed, not stored): across the teams the viewer can see (admins: all) — overview totals, the viewer's own open work and next deadlines, per-project progress, and per-person workload. "Overdue" = not done and due before today; "due soon" = due today through 7 days ahead; "today" is the hosting computer's local date.
+Role: defines what a user can view/edit (admin, project_lead, member). App-wide: a user has one role everywhere. Rows are created at server start-up.
+Session: id, user_id → User, token_hash, created_at, expires_at, revoked_at
 
 Update this section whenever the schema actually changes — it should never drift from server/models/.
 
@@ -98,7 +100,7 @@ Write or update a test alongside any new feature or bugfix.
 8. Open Questions / Not Yet Decided
 Who hosts, and when — since there's no always-on server, the team needs a convention for who runs the backend during a given work session, and how the other person finds the current host's IP/address. Worth deciding before Goal #1 is usable by both of you.
 Client failure handling when the host is unreachable — should fail with a clear message, not a crash or a silent hang.
-Auth mechanism (JWT vs session-based) — needs a decision before Goal #2 (role-based access) can be built properly.
+~~Auth mechanism (JWT vs session-based)~~ — decided: server-side sessions (see Tech Stack).
 Whether PySide6 or PyQt6 is the final choice (license implications differ).
 Final confirmation of FastAPI vs Django for the backend.
 Packaging/distribution plan for the native app on Windows and Linux (e.g., PyInstaller, Briefcase).

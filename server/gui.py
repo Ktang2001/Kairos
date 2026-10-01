@@ -3,13 +3,13 @@ import sys
 import threading
 
 import uvicorn
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QMainWindow,
+    QPlainTextEdit,
     QPushButton,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -21,6 +21,9 @@ from server.services import message_service
 HOST = "0.0.0.0"
 PORT = 8000
 MAX_PORT_ATTEMPTS = 20
+#: How long to wait for uvicorn to report it is listening before giving up.
+STARTUP_TIMEOUT_MS = 10_000
+STARTUP_POLL_MS = 100
 
 
 def find_free_port(host: str, start_port: int, max_attempts: int = MAX_PORT_ATTEMPTS) -> int:
@@ -30,10 +33,13 @@ def find_free_port(host: str, start_port: int, max_attempts: int = MAX_PORT_ATTE
     a same-machine occupant regardless of what it does with unauthenticated
     requests - the earlier 8000 collision returned a 401 rather than refusing
     the connection, which a simple "is something answering" check would miss.
+
+    The probe must NOT set SO_REUSEADDR: on Windows that option lets a socket
+    bind to a port another program is already listening on, so every busy
+    port looked free and the window picked 8000 even while it was taken.
     """
     for port in range(start_port, start_port + max_attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind((host, port))
             except OSError:
@@ -55,10 +61,16 @@ class ServerWindow(QMainWindow):
         self._port: int | None = None
 
         self.status_label = QLabel("Server stopped")
+        # Wrap rather than clip: the address clients need is at the end of a
+        # long line, and it must be readable (and copyable) in full.
+        self.status_label.setWordWrap(True)
+        self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.toggle_button = QPushButton("Start Server")
         self.toggle_button.clicked.connect(self._on_toggle_clicked)
 
-        self.log = QTextEdit(readOnly=True)
+        # Plain text only: messages come from the network, and a rich-text box
+        # would render HTML in them (fake banners, links, "SYSTEM" senders).
+        self.log = QPlainTextEdit(readOnly=True)
 
         layout = QVBoxLayout()
         layout.addWidget(self.status_label)
@@ -73,6 +85,13 @@ class ServerWindow(QMainWindow):
         self._poll_timer.setInterval(1000)
         self._poll_timer.timeout.connect(self._poll_new_messages)
 
+        # Watches a just-started server until it is really listening (or has
+        # died), so "Server running" is only ever shown when it is true.
+        self._startup_timer = QTimer(self)
+        self._startup_timer.setInterval(STARTUP_POLL_MS)
+        self._startup_timer.timeout.connect(self._check_startup)
+        self._startup_waited_ms = 0
+
     def _on_toggle_clicked(self) -> None:
         if self._uvicorn_server is None:
             self._start_server()
@@ -86,19 +105,60 @@ class ServerWindow(QMainWindow):
             self.status_label.setText(str(exc))
             return
 
-        config = uvicorn.Config(app, host=HOST, port=port, log_level="info")
+        # proxy_headers=False: there is no proxy in front of Kairos, so an
+        # X-Forwarded-For header is always a lie -- trusting it would let a
+        # caller pick their own address and dodge the login lockout.
+        config = uvicorn.Config(app, host=HOST, port=port, log_level="info", proxy_headers=False)
         self._uvicorn_server = uvicorn.Server(config)
         self._server_thread = threading.Thread(target=self._uvicorn_server.run, daemon=True)
         self._server_thread.start()
         self._port = port
 
-        lan_ip = socket.gethostbyname(socket.gethostname())
-        note = f" (port {PORT} was taken, picked {port})" if port != PORT else ""
-        self.status_label.setText(f"Server running - give clients: http://{lan_ip}:{port}{note}")
-        self.toggle_button.setText("Stop Server")
-        self._poll_timer.start()
+        self.status_label.setText(f"Starting server on port {port}…")
+        self.toggle_button.setEnabled(False)
+        self._startup_waited_ms = 0
+        self._startup_timer.start()
+
+    def _check_startup(self) -> None:
+        """Report "running" only once uvicorn is listening; report failure if
+        its thread died (e.g. the port was taken after all) or it never came up.
+        """
+        server, thread = self._uvicorn_server, self._server_thread
+        if server is None or thread is None:
+            self._startup_timer.stop()
+            return
+
+        if server.started:
+            self._startup_timer.stop()
+            port = self._port
+            lan_ip = socket.gethostbyname(socket.gethostname())
+            note = f" (port {PORT} was taken, picked {port})" if port != PORT else ""
+            # The address gets its own line so it never wraps mid-URL.
+            self.status_label.setText(
+                f"Server running{note}.\nGive clients this address:\nhttp://{lan_ip}:{port}"
+            )
+            self.toggle_button.setText("Stop Server")
+            self.toggle_button.setEnabled(True)
+            self._poll_timer.start()
+            return
+
+        self._startup_waited_ms += STARTUP_POLL_MS
+        if not thread.is_alive() or self._startup_waited_ms >= STARTUP_TIMEOUT_MS:
+            self._startup_timer.stop()
+            port = self._port
+            server.should_exit = True
+            self._uvicorn_server = None
+            self._server_thread = None
+            self._port = None
+            self.status_label.setText(
+                f"Could not start the server on port {port}. Another program may be "
+                "using it - close it and try again. (Details are in the terminal.)"
+            )
+            self.toggle_button.setText("Start Server")
+            self.toggle_button.setEnabled(True)
 
     def _stop_server(self) -> None:
+        self._startup_timer.stop()
         if self._uvicorn_server is not None:
             self._uvicorn_server.should_exit = True
         if self._server_thread is not None:
@@ -120,7 +180,9 @@ class ServerWindow(QMainWindow):
 
         for message in sorted(messages, key=lambda m: m.id):
             if message.id > self._last_seen_id:
-                self.log.append(f"[{message.created_at}] {message.sender}: {message.content}")
+                self.log.appendPlainText(
+                    f"[{message.created_at}] {message.sender}: {message.content}"
+                )
                 self._last_seen_id = message.id
 
     def closeEvent(self, event) -> None:
