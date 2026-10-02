@@ -11,20 +11,16 @@ Who may do what:
 * A team is visible only to its members and to admins. To everyone else it
   does not exist: they get ``TeamNotFound`` (404), not a 403, so team ids
   cannot be probed to learn which teams exist.
-* When someone leaves or is removed, their tasks and subtasks in the team's
-  projects are unassigned, so nothing stays assigned to a non-member.
 
 Routes translate the exceptions below into HTTP status codes.
 """
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import selectinload
 
 from server.models.project import Project
-from server.models.subtask import Subtask
-from server.models.task import Task
 from server.models.team import Team
 from server.models.user import User
 from server.services import auth_service
@@ -242,28 +238,7 @@ def remove_member(db: OrmSession, team_id: int, actor: User, *, user_id: int) ->
         raise LeadCannotBeRemoved(user_id)
 
     team.members.remove(member)
-    _unassign_team_work(db, team.id, member.id)
     db.commit()
-
-
-def _unassign_team_work(db: OrmSession, team_id: int, user_id: int) -> None:
-    """Unassign ``user_id`` from every task and subtask in this team's projects.
-
-    Only this team's work: the same person may still be on other teams, and
-    their assignments there are untouched. Runs in the caller's transaction,
-    so the removal and the unassigning commit (or fail) together.
-    """
-    team_task_ids = select(Task.id).join(Project).where(Project.team_id == team_id)
-    db.execute(
-        update(Task)
-        .where(Task.id.in_(team_task_ids), Task.assignee_id == user_id)
-        .values(assignee_id=None)
-    )
-    db.execute(
-        update(Subtask)
-        .where(Subtask.task_id.in_(team_task_ids), Subtask.assignee_id == user_id)
-        .values(assignee_id=None)
-    )
 
 
 def change_lead(db: OrmSession, team_id: int, actor: User, *, new_lead_id: int) -> Team:

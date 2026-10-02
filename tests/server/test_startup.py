@@ -14,13 +14,14 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from server.db import config as db_config
 from server.db import session as db_session
-from server.db.session import get_db
+from server.db.session import get_db, open_session
 from server.main import app
 from server.models.role import Role
 from shared.roles import ALL_ROLES
@@ -30,12 +31,9 @@ ALEMBIC_INI = REPO_ROOT / "server" / "db" / "alembic.ini"
 
 
 def _override_with(factory: sessionmaker[Session]) -> None:
-    def override_get_db() -> Iterator[Session]:
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
+    def override_get_db(request: Request = None) -> Iterator[Session]:  # type: ignore[assignment]
+        # Same per-request locking as the real get_db (server.db.session).
+        yield from open_session(factory, request)
 
     app.dependency_overrides[get_db] = override_get_db
 

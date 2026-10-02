@@ -14,7 +14,7 @@ from PySide6.QtGui import QColor, QPalette
 from pytestqt.qtbot import QtBot
 
 from client.api_client import ApiClient
-from client.main import MainWindow
+from client.main import SIGNED_IN_SIZE, MainWindow
 from client.settings import ClientSettings
 from client.viewmodels.login_viewmodel import Session
 from client.views.login_view import MAX_FORM_WIDTH
@@ -109,7 +109,9 @@ def test_a_long_name_is_shortened_not_stretching_the_window(
     qtbot.wait(50)
 
     label = window.home_view.signed_in_label
-    assert window.width() <= 500
+    # The window widens to its signed-in size for the Teams screen -- and no
+    # further, however long the name.
+    assert window.width() == SIGNED_IN_SIZE[0]
     assert label.text().endswith("…")
     assert label.full_text == f"Signed in as {long_name.strip()} (Member)"
     assert label.toolTip() == label.full_text

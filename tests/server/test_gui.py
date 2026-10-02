@@ -13,12 +13,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import Request
 from pytestqt.qtbot import QtBot
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from server import gui
-from server.db.session import get_db
+from server.db.session import configure_sqlite, get_db, open_session
 from server.main import create_app
 from server.models import Base
 
@@ -44,19 +45,18 @@ def server_window(
     qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[gui.ServerWindow]:
     """A server window wired to a throwaway database instead of the dev one."""
-    engine = create_engine(
-        f"sqlite:///{(tmp_path / 'gui.db').as_posix()}",
-        connect_args={"check_same_thread": False},
+    engine = configure_sqlite(
+        create_engine(
+            f"sqlite:///{(tmp_path / 'gui.db').as_posix()}",
+            connect_args={"check_same_thread": False},
+        )
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
-    def override_get_db() -> Iterator[Session]:
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
+    def override_get_db(request: Request = None) -> Iterator[Session]:  # type: ignore[assignment]
+        # Same per-request locking as the real get_db (server.db.session).
+        yield from open_session(factory, request)
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db

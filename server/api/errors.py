@@ -1,9 +1,7 @@
 """One table mapping service-layer refusals to HTTP responses.
 
-Shared by the team, project, task and dashboard routes, because a project
-route can hit a team rule (``NotTeamManager``) and a task route can hit a
-project rule; each module keeping its own table would let the same refusal
-get different status codes depending on which URL raised it.
+Shared by every route module, so the same refusal always gets the same
+status code and message whichever URL raised it.
 
 Usage in a route:
 
@@ -15,7 +13,7 @@ Usage in a route:
 
 from fastapi import HTTPException, status
 
-from server.services import project_service, task_service, team_service
+from server.services import team_service, user_service
 
 ERRORS: dict[type[Exception], tuple[int, str]] = {
     # Teams
@@ -46,14 +44,11 @@ ERRORS: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_409_CONFLICT,
         "Add that user to the team before making them the lead",
     ),
-    # Projects
-    project_service.ProjectNotFound: (status.HTTP_404_NOT_FOUND, "Project not found"),
-    # Tasks and subtasks
-    task_service.TaskNotFound: (status.HTTP_404_NOT_FOUND, "Task not found"),
-    task_service.SubtaskNotFound: (status.HTTP_404_NOT_FOUND, "Subtask not found"),
-    task_service.AssigneeNotOnTeam: (
-        status.HTTP_422_UNPROCESSABLE_CONTENT,
-        "The assignee must be a member of this team",
+    # Users (admin)
+    user_service.UserNotFound: (status.HTTP_404_NOT_FOUND, "User not found"),
+    user_service.CannotChangeOwnRole: (
+        status.HTTP_409_CONFLICT,
+        "You can't change your own role - ask another admin",
     ),
 }
 

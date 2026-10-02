@@ -1,17 +1,24 @@
 import sys
 
+from PySide6.QtCore import Slot
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 
 from client.settings import ClientSettings
 from client.viewmodels.home_viewmodel import HomeViewModel
 from client.viewmodels.login_viewmodel import LoginViewModel, Session
+from client.viewmodels.session_events import SessionEvents
 from client.views.home_view import HomeView
 from client.views.login_view import LoginView
 
 #: How long closing the window may wait to tell the server the session is over.
 #: Short, because a host that has gone away would otherwise hold up closing.
 LOGOUT_ON_CLOSE_TIMEOUT = 2.0
+
+#: Minimum window size once signed in (width, height).
+SIGNED_IN_SIZE = (820, 560)
+
+SESSION_EXPIRED_MESSAGE = "Your session has expired. Please sign in again."
 
 
 class MainWindow(QMainWindow):
@@ -27,6 +34,7 @@ class MainWindow(QMainWindow):
         self.login_view = LoginView(self.login_viewmodel, self.settings)
         self.home_viewmodel: HomeViewModel | None = None
         self.home_view: HomeView | None = None
+        self.session_events: SessionEvents | None = None
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self.login_view)
@@ -35,14 +43,36 @@ class MainWindow(QMainWindow):
         self.login_viewmodel.signed_in.connect(self._show_home)
 
     def _show_home(self, session: Session) -> None:
+        self.session_events = SessionEvents(self)
+        self.session_events.attach(session.client)
+        self.session_events.expired.connect(self._on_session_expired)
         self.home_viewmodel = HomeViewModel(session, parent=self)
-        self.home_view = HomeView(self.home_viewmodel)
+        self.home_view = HomeView(self.home_viewmodel, events=self.session_events)
         self.home_viewmodel.signed_out.connect(self._show_login)
         self.stack.addWidget(self.home_view)
         self.stack.setCurrentWidget(self.home_view)
         self.setWindowTitle(f"Kairos — {session.user['name']}")
+        # The Teams screen needs room for its two columns.
+        self.resize(max(self.width(), SIGNED_IN_SIZE[0]), max(self.height(), SIGNED_IN_SIZE[1]))
+        self.home_view.load()
+
+    @Slot()
+    def _on_session_expired(self) -> None:
+        """The server stopped accepting this session (it expired, or was ended
+        by "sign out everywhere" on another computer). Go back to the login
+        screen and say why, with the email already filled in.
+        """
+        if self.home_viewmodel is None:
+            return
+        self.home_viewmodel.session.client.token = None  # dead; don't send it again
+        self._show_login()
+        self.login_view.show_message(SESSION_EXPIRED_MESSAGE)
 
     def _show_login(self) -> None:
+        if self.session_events is not None and self.home_viewmodel is not None:
+            self.session_events.detach(self.home_viewmodel.session.client)
+            self.session_events.deleteLater()
+        self.session_events = None
         if self.home_view is not None:
             self.stack.removeWidget(self.home_view)
             self.home_view.deleteLater()

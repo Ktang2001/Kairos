@@ -1,9 +1,11 @@
 import os
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 
-DEFAULT_BASE_URL = "http://localhost:8000"
+#: 127.0.0.1 rather than "localhost": see normalise_base_url.
+DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
 #: Seconds to wait for the host. Long enough for a slow LAN, short enough that
 #: "the host is off" is reported promptly instead of looking like a hang.
@@ -29,6 +31,11 @@ def normalise_base_url(text: str) -> str:
     Accepts ``192.168.1.5:8000`` as well as ``http://192.168.1.5:8000/``:
     adds a missing ``http://`` and drops trailing slashes, so typing the
     address the server window shows "just works".
+
+    ``localhost`` is rewritten to ``127.0.0.1``. On Windows, "localhost"
+    resolves to the IPv6 address ::1 first; the server listens on IPv4 only,
+    so every request waited ~2 seconds for that attempt to fail before
+    falling back -- slow enough that people pressed Send twice.
     """
     candidate = text.strip()
     if not candidate:
@@ -46,7 +53,29 @@ def normalise_base_url(text: str) -> str:
         url = None
     if url is None or url.scheme not in ("http", "https") or not url.host or " " in candidate:
         raise ApiError(f"{text.strip()!r} is not a valid server address.")
+    if url.host == "localhost":
+        candidate = str(url.copy_with(host="127.0.0.1")).rstrip("/")
     return candidate
+
+
+def _unreachable_message(base_url: str) -> str:
+    return f"Can't reach the server at {base_url}. Is it running, and is the address right?"
+
+
+def _timeout_message(base_url: str) -> str:
+    return f"The server at {base_url} took too long to answer."
+
+
+def is_connection_error(message: str) -> bool:
+    """True for the two messages that mean "the host didn't answer at all".
+
+    Screens with the app-wide offline banner use this to avoid repeating the
+    same problem in their own error line. Kept next to the two functions that
+    build those messages so the wording can't drift apart.
+    """
+    return message.startswith("Can't reach the server at ") or (
+        message.startswith("The server at ") and message.endswith(" took too long to answer.")
+    )
 
 
 def _error_message(response: httpx.Response) -> str:
@@ -83,6 +112,14 @@ class ApiClient:
 
     Every failure -- unreachable host, timeout, or an error response -- is
     raised as ``ApiError`` with a message ready to display.
+
+    Two optional hooks let the app react to the connection as a whole rather
+    than error by error (both may be called from a background thread):
+
+    * ``on_connection_changed(reachable)`` after every request: False when the
+      host could not be reached, True when it answered (even with an error).
+    * ``on_session_expired()`` when a signed-in request is refused with 401,
+      i.e. the token was revoked, expired, or signed out elsewhere.
     """
 
     def __init__(self, base_url: str | None = None, timeout: float = DEFAULT_TIMEOUT) -> None:
@@ -91,6 +128,8 @@ class ApiClient:
         )
         self.timeout = timeout
         self.token: str | None = None
+        self.on_connection_changed: Callable[[bool], None] | None = None
+        self.on_session_expired: Callable[[], None] | None = None
 
     def _request(self, method: str, path: str, *, json: dict | None = None) -> Any:
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
@@ -103,16 +142,27 @@ class ApiClient:
                 timeout=self.timeout,
             )
         except httpx.TimeoutException:
-            raise ApiError(f"The server at {self.base_url} took too long to answer.") from None
+            self._notify_connection(False)
+            raise ApiError(_timeout_message(self.base_url)) from None
         except httpx.TransportError:
-            raise ApiError(
-                f"Can't reach the server at {self.base_url}. "
-                "Is it running, and is the address right?"
-            ) from None
+            self._notify_connection(False)
+            raise ApiError(_unreachable_message(self.base_url)) from None
 
+        self._notify_connection(True)
         if response.is_success:
             return response.json() if response.content else None
+        if (
+            response.status_code == 401
+            and self.token is not None
+            and not path.startswith("/auth/logout")
+            and self.on_session_expired is not None
+        ):
+            self.on_session_expired()
         raise ApiError(_error_message(response), response.status_code)
+
+    def _notify_connection(self, reachable: bool) -> None:
+        if self.on_connection_changed is not None:
+            self.on_connection_changed(reachable)
 
     def health(self) -> dict:
         return self._request("GET", "/health")
@@ -166,3 +216,40 @@ class ApiClient:
             pass
         finally:
             self.token = None
+
+    # ------------------------------------------------------------- teams
+
+    def list_teams(self) -> list[dict]:
+        """Teams you belong to (admins: every team), each with lead and member count."""
+        return self._request("GET", "/teams")
+
+    def get_team(self, team_id: int) -> dict:
+        """One team with its full member list."""
+        return self._request("GET", f"/teams/{team_id}")
+
+    def create_team(self, name: str) -> dict:
+        return self._request("POST", "/teams", json={"name": name})
+
+    def rename_team(self, team_id: int, name: str) -> dict:
+        return self._request("PATCH", f"/teams/{team_id}", json={"name": name})
+
+    def delete_team(self, team_id: int) -> None:
+        self._request("DELETE", f"/teams/{team_id}")
+
+    def add_member(self, team_id: int, email: str) -> dict:
+        return self._request("POST", f"/teams/{team_id}/members", json={"email": email})
+
+    def remove_member(self, team_id: int, user_id: int) -> None:
+        """Remove someone, or leave the team when ``user_id`` is your own id."""
+        self._request("DELETE", f"/teams/{team_id}/members/{user_id}")
+
+    def change_lead(self, team_id: int, user_id: int) -> dict:
+        return self._request("PUT", f"/teams/{team_id}/lead", json={"user_id": user_id})
+
+    # ------------------------------------------------------- users (admin)
+
+    def list_users(self) -> list[dict]:
+        return self._request("GET", "/users")
+
+    def set_role(self, user_id: int, role: str) -> dict:
+        return self._request("PUT", f"/users/{user_id}/role", json={"role": role})

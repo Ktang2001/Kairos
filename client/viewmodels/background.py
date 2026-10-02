@@ -65,13 +65,26 @@ class _Job(QRunnable):
         try:
             result = self._fn()
         except ApiError as exc:
-            self._signals.failed.emit(exc.message)
+            self._deliver(self._signals.failed, exc.message)
         except Exception as exc:  # noqa: BLE001 - must never escape a pool thread
             # An exception escaping a pool thread is printed and lost, leaving
             # the form stuck on "Signing in...". Report it like any failure.
-            self._signals.failed.emit(f"Something went wrong: {exc}")
+            self._deliver(self._signals.failed, f"Something went wrong: {exc}")
         else:
-            self._signals.succeeded.emit(result)
+            self._deliver(self._signals.succeeded, result)
+
+    @staticmethod
+    def _deliver(signal, value: Any) -> None:
+        """Emit, unless the screen that asked has closed in the meantime.
+
+        E.g. signing out while the team list is still loading: the request
+        finishes after its screen (and these signals) were deleted, and Qt
+        raises RuntimeError. Nobody is waiting for that answer any more.
+        """
+        try:
+            signal.emit(value)
+        except RuntimeError:
+            pass
 
 
 class BackgroundRunner(QObject):

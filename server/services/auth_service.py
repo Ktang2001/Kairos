@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import selectinload
 
+from server.db.session import begin_write
 from server.models.role import Role
 from server.models.user import User
 from server.services import password_service
@@ -109,6 +110,9 @@ def register_user(
     administrator.
     """
     email = normalise_email(email)
+    # Hash first, outside the write lock: it is the slow part (~0.1 s).
+    password_hash = password_service.hash_password(password)
+    begin_write(db)
 
     if get_user_by_email(db, email) is not None:
         raise EmailAlreadyRegistered(email)
@@ -120,7 +124,7 @@ def register_user(
     user = User(
         name=name.strip(),
         email=email,
-        password_hash=password_service.hash_password(password),
+        password_hash=password_hash,
         role_id=role.id,
     )
     db.add(user)

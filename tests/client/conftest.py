@@ -21,16 +21,20 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 import uvicorn
+from fastapi import Request
 from PySide6.QtCore import QSettings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from client.settings import ClientSettings
-from server.db.session import get_db
+from server.db.session import configure_sqlite, get_db, open_session
 from server.main import create_app
 from server.models import Base
 
 TEST_PASSWORD = "correct-horse-battery"
+
+#: The live server's session factory, so tests can set roles directly.
+_LIVE_DB: dict = {}
 
 _email_counter = itertools.count()
 
@@ -50,18 +54,18 @@ def free_port() -> int:
 @pytest.fixture(scope="session")
 def live_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     database_file: Path = tmp_path_factory.mktemp("live") / "client-tests.db"
-    engine = create_engine(
-        f"sqlite:///{database_file.as_posix()}", connect_args={"check_same_thread": False}
+    engine = configure_sqlite(
+        create_engine(
+            f"sqlite:///{database_file.as_posix()}", connect_args={"check_same_thread": False}
+        )
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    _LIVE_DB["factory"] = factory
 
-    def override_get_db() -> Iterator[Session]:
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
+    def override_get_db(request: Request = None) -> Iterator[Session]:  # type: ignore[assignment]
+        # Same per-request locking as the real get_db (server.db.session).
+        yield from open_session(factory, request)
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
@@ -105,3 +109,18 @@ def silent_server() -> Iterator[str]:
 def settings(tmp_path: Path) -> ClientSettings:
     """Settings in a temp INI file, never the real per-user store."""
     return ClientSettings(QSettings(str(tmp_path / "kairos.ini"), QSettings.Format.IniFormat))
+
+
+def set_live_role(email: str, role: str) -> None:
+    """Change an account's role in the live server's database, the way an
+    admin (or the seed script) would.
+    """
+    from server.services import auth_service
+
+    db = _LIVE_DB["factory"]()
+    try:
+        user = auth_service.get_user_by_email(db, email)
+        user.role_id = auth_service.get_role_by_name(db, role).id
+        db.commit()
+    finally:
+        db.close()

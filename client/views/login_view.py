@@ -253,6 +253,12 @@ class LoginView(QWidget):
         self.viewmodel.clear_error()
         self.password_input.setFocus()
 
+    def show_message(self, message: str) -> None:
+        """Explain why the user is looking at the login screen (e.g. their
+        session expired). Cleared as soon as they start typing.
+        """
+        self._show_error(message)
+
     def reset_after_sign_out(self) -> None:
         """Back to a clean sign-in page. Passwords are never left in a field."""
         self._clear_passwords()

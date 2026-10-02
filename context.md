@@ -73,10 +73,10 @@ Kairos/
 5. Data Model (initial sketch — expect this to evolve)
 User: id, name, email (unique, stored lowercase), password_hash, role_id → Role
 Team: id, name (unique, case-insensitive), lead_id → User, created_at, members (M2M to User via team_members). The lead is always a member; the lead and admins manage the team.
-Project: id, team_id → Team, name, description, status (active | completed), created_at. Managed by the team's lead/admins; visible to team members. Deleting a project deletes its tasks and subtasks; a team cannot be deleted while it has projects.
-Task: id, project_id → Project, title, description, assignee_id → User (must be on the team; cleared when they leave it), due_date, status (todo | in_progress | done, see shared/statuses.py), created_at, completed_at (set when marked done, cleared if reopened). Any team member may create/edit; lead/admins delete.
-Subtask: id, task_id → Task, title, assignee_id → User (same rules as Task), due_date, status (same values as Task)
-Dashboard (GET /dashboard, computed, not stored): across the teams the viewer can see (admins: all) — overview totals, the viewer's own open work and next deadlines, per-project progress, and per-person workload. "Overdue" = not done and due before today; "due soon" = due today through 7 days ahead; "today" is the hosting computer's local date.
+Project: id, team_id, name, description, status, created_at
+Task: id, project_id, title, description, assignee_id, due_date, status, created_at
+Subtask: id, task_id, title, assignee_id, due_date, status
+Status (2026-10-01): Project/Task/Subtask exist only as database tables - no API or screens. A full server implementation of goals 4-7 (projects, tasks, subtasks, dashboard) was built and then removed to focus on goals 1-3; it is preserved in commit b60b8c8 and in Kairos-backup-before-removing-goals-4-7.zip if the team wants it back.
 Role: defines what a user can view/edit (admin, project_lead, member). App-wide: a user has one role everywhere. Rows are created at server start-up.
 Session: id, user_id → User, token_hash, created_at, expires_at, revoked_at
 
@@ -99,7 +99,7 @@ Prefer small, reviewable diffs over large speculative rewrites.
 Write or update a test alongside any new feature or bugfix.
 8. Open Questions / Not Yet Decided
 Who hosts, and when — since there's no always-on server, the team needs a convention for who runs the backend during a given work session, and how the other person finds the current host's IP/address. Worth deciding before Goal #1 is usable by both of you.
-Client failure handling when the host is unreachable — should fail with a clear message, not a crash or a silent hang.
+~~Client failure handling when the host is unreachable~~ — decided: the signed-in screen shows one "Can't reach the server" banner with Retry that clears itself when the host answers; an expired or revoked session returns to the login screen with a message; requests run off the UI thread so nothing freezes.
 ~~Auth mechanism (JWT vs session-based)~~ — decided: server-side sessions (see Tech Stack).
 Whether PySide6 or PyQt6 is the final choice (license implications differ).
 Final confirmation of FastAPI vs Django for the backend.

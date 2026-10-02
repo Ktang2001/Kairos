@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session as OrmSession
 
 from server.api.deps import get_current_session, get_current_user, require_role
-from server.db.session import get_db
+from server.db.session import begin_write, get_db
 from server.models.session import Session
 from server.models.user import User
 from server.schemas.auth import (
@@ -70,6 +70,12 @@ def register(
             detail="Server has no roles configured; restart the server",
         ) from exc
 
+    # register_user committed and then re-read the new account; writing the
+    # session in that same read transaction fails in WAL mode if anyone else
+    # wrote meanwhile. Start a fresh write transaction (see begin_write).
+    user_id = user.id
+    begin_write(db)
+    user = db.get(User, user_id)
     session, token = session_service.create_session(db, user)
     return _build_login_response(session, token, user)
 
@@ -117,6 +123,11 @@ def login(
         ) from None
 
     throttle.record_success(payload.email, address)
+    # The password check (slow) ran without the write lock; take it now for
+    # the quick session write. See server.db.session.begin_write.
+    user_id = user.id
+    begin_write(db)
+    user = db.get(User, user_id)
     session, token = session_service.create_session(db, user)
     return _build_login_response(session, token, user)
 

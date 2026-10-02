@@ -14,6 +14,9 @@ dist/
 # Database
 server/db/kairos.db
 *.db
+# SQLite WAL-mode companions of a live database (see server/db/session.py)
+*.db-wal
+*.db-shm
 *.sqlite3
 
 # Editors / OS

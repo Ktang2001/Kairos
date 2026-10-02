@@ -17,7 +17,7 @@ from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-#: Far above any legitimate request (the largest is a 5000-character task
+#: Far above any legitimate request (the largest is a 2000-character message
 #: description), far below anything that strains memory.
 MAX_BODY_BYTES = 1024 * 1024
 

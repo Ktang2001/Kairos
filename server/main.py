@@ -5,17 +5,15 @@ from fastapi import FastAPI
 from sqlalchemy.exc import OperationalError
 
 from server.api.auth import router as auth_router
-from server.api.dashboard import router as dashboard_router
 from server.api.health import router as health_router
 from server.api.messages import router as messages_router
-from server.api.projects import router as projects_router
 from server.api.protection import (
     BodySizeLimitMiddleware,
     LocalOnlyDocsMiddleware,
     number_too_large,
 )
-from server.api.tasks import router as tasks_router
 from server.api.teams import router as teams_router
+from server.api.users import router as users_router
 from server.db.session import get_db
 from server.services import auth_service
 from server.services.login_throttle import LoginThrottle
@@ -61,9 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(messages_router)
     app.include_router(teams_router)
-    app.include_router(projects_router)
-    app.include_router(tasks_router)
-    app.include_router(dashboard_router)
+    app.include_router(users_router)
     return app
 
 

@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from server.db.session import get_db
+from server.db.session import configure_sqlite, get_db, open_session
 from server.main import app
 from server.models import Base
 from server.services import auth_service
@@ -38,7 +39,12 @@ def engine(tmp_path: Path) -> Iterator[Engine]:
     seeing no tables) that this suite exists to catch.
     """
     database_file = tmp_path / "test.db"
-    test_engine = create_engine(f"sqlite:///{database_file.as_posix()}")
+    test_engine = configure_sqlite(
+        create_engine(
+            f"sqlite:///{database_file.as_posix()}",
+            connect_args={"check_same_thread": False},
+        )
+    )
     Base.metadata.create_all(test_engine)
     yield test_engine
     test_engine.dispose()
@@ -66,12 +72,9 @@ def client(
 ) -> Iterator[TestClient]:
     """A TestClient whose database dependency points at the throwaway database."""
 
-    def override_get_db() -> Iterator[Session]:
-        db = session_factory()
-        try:
-            yield db
-        finally:
-            db.close()
+    def override_get_db(request: Request = None) -> Iterator[Session]:  # type: ignore[assignment]
+        # Same per-request locking as the real get_db (server.db.session).
+        yield from open_session(session_factory, request)
 
     app.dependency_overrides[get_db] = override_get_db
     # The login lockout lives on the shared app object; without a reset, wrong

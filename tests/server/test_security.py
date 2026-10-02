@@ -341,8 +341,8 @@ def test_ids_beyond_64_bits_are_rejected_not_crashed(
     client: TestClient, auth_headers: Callable[..., dict[str, str]], big: str
 ) -> None:
     headers = auth_headers()
-    for url in (f"/teams/{big}", f"/projects/{big}", f"/tasks/{big}"):
-        response = client.get(url, headers=headers)
+    for method, url in (("GET", f"/teams/{big}"), ("DELETE", f"/teams/{big}/members/1")):
+        response = client.request(method, url, headers=headers)
         assert response.status_code == 422, url
         assert response.json()["detail"] == "A number in the request is too large"
 
@@ -387,7 +387,7 @@ def test_accents_and_emoji_are_kept(client: TestClient) -> None:
     assert response.json()["user"]["name"] == "Zoë 🎉"
 
 
-def test_team_and_project_names_are_cleaned(client: TestClient, session_factory) -> None:
+def test_team_names_are_cleaned(client: TestClient, session_factory) -> None:
     lead = client.post(
         "/auth/register", json={"name": "L", "email": "l@example.com", "password": TEST_PASSWORD}
     ).json()
@@ -403,10 +403,10 @@ def test_team_and_project_names_are_cleaned(client: TestClient, session_factory)
     team = client.post("/teams", json={"name": "Alp\u200bha"}, headers=headers).json()
     assert team["name"] == "Alpha"
     assert client.post("/teams", json={"name": "\u202eAlpha"}, headers=headers).status_code == 409
-    project = client.post(
-        f"/teams/{team['id']}/projects", json={"name": "\u202eWeb"}, headers=headers
+    renamed = client.patch(
+        f"/teams/{team['id']}", json={"name": "\u202eOmega"}, headers=headers
     ).json()
-    assert project["name"] == "Web"
+    assert renamed["name"] == "Omega"
 
 
 # ============================================ 12. docs only from the host
