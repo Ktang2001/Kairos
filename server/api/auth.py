@@ -78,7 +78,8 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> AuthResult:
 
 @router.post("/login", response_model=AuthResult | PendingVerificationResult)
 def login(
-    payload: LoginRequest, db: Session = Depends(get_db)  # noqa: B008
+    payload: LoginRequest,
+    db: Session = Depends(get_db),  # noqa: B008
 ) -> AuthResult | PendingVerificationResult:
     """Password check, then - only for accounts that opted in at signup
     (User.two_factor_enabled) - 2FA: a real session isn't issued until the
@@ -98,7 +99,8 @@ def login(
 
 @router.post("/verify-code", response_model=AuthResult)
 def verify_code(
-    payload: VerifyCodeRequest, db: Session = Depends(get_db)  # noqa: B008
+    payload: VerifyCodeRequest,
+    db: Session = Depends(get_db),  # noqa: B008
 ) -> AuthResult:
     """The second step of signup/login - confirms the emailed code and, only
     then, issues the real session (see server/services/session_service.py)."""
@@ -114,7 +116,8 @@ def verify_code(
 
 @router.post("/resend-code", response_model=PendingVerificationResult)
 def resend_code(
-    payload: ResendCodeRequest, db: Session = Depends(get_db)  # noqa: B008
+    payload: ResendCodeRequest,
+    db: Session = Depends(get_db),  # noqa: B008
 ) -> PendingVerificationResult:
     try:
         email, code = verification_service.resend_verification(db, payload.pending_token)

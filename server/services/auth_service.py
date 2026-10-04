@@ -1,12 +1,24 @@
+"""Accounts: sign-up, password checks, and the role lookups the rest of the
+server uses.
+
+Sign-in (PBKDF2 passwords, the per-email cooldown, ``create_user`` and
+``authenticate``) is the Kaleb branch's design, kept as is. The role helpers at
+the bottom (``ensure_roles``, ``get_role_by_name``, ``get_user_by_email``) came
+from the Nick2 branch with its team and admin features; they never touch
+passwords.
+"""
+
 import hashlib
 import hmac
 import os
 import time
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from server.models.role import Role
 from server.models.user import User
+from shared.roles import ALL_ROLES
 
 _PBKDF2_ITERATIONS = 200_000
 _MIN_PASSWORD_LENGTH = 8
@@ -117,3 +129,44 @@ def authenticate(db: Session, email: str, password: str) -> User | None:
 
     _clear_failed_attempts(email)
     return user
+
+
+# ------------------------------------------------- roles and lookups (Nick2)
+
+
+def normalise_email(email: str) -> str:
+    """Fold an email to the form it is stored in (trimmed, lower case)."""
+    return email.strip().lower()
+
+
+def ensure_roles(db: Session) -> list[Role]:
+    """Create any missing roles and return them all, most privileged first.
+
+    Run at every server start (``server.main.lifespan``): the migrations create
+    the ``roles`` table but no rows, and teams/admin features need all three.
+    Safe to call repeatedly.
+    """
+    existing = {role.name: role for role in db.scalars(select(Role))}
+    created = False
+    for role_name in ALL_ROLES:
+        if role_name not in existing:
+            existing[role_name] = Role(name=role_name)
+            db.add(existing[role_name])
+            created = True
+    if created:
+        db.commit()
+    return [existing[role_name] for role_name in ALL_ROLES]
+
+
+def get_role_by_name(db: Session, role_name: str) -> Role | None:
+    """The role row named "admin", "project_lead" or "member", or None."""
+    return db.scalar(select(Role).where(Role.name == role_name))
+
+
+def get_user_by_email(db: Session, email: str) -> User | None:
+    """Look a user up by email, with their role loaded straight away (callers
+    read ``user.role.name`` after the request's session may have closed).
+    """
+    return db.scalar(
+        select(User).options(selectinload(User.role)).where(User.email == normalise_email(email))
+    )

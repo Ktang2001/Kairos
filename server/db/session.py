@@ -1,31 +1,144 @@
-from collections.abc import Iterator
-from pathlib import Path
+"""The database engine and the per-request session.
 
-from sqlalchemy import create_engine
+Concurrency (found by stress testing): several rules are "check, then
+write" -- "is X still a member?" before making X the lead, "is there
+another admin?" before a demotion. SQLite by default only locks the
+database at the *write*, so two requests could both pass their checks and
+then both write, breaking the rule (a team whose lead isn't a member; no
+admins left). Three settings fix that:
+
+* ``BEGIN IMMEDIATE`` for requests that change data: the write lock is
+  taken *before* the request's first read, so its checks and its write
+  happen as one step and simultaneous changes queue up one at a time.
+  Reads (GET) use an ordinary transaction and never queue.
+* WAL journal mode: reads never wait for a write in progress.
+* A 30 s busy timeout: a queued write waits instead of failing with
+  "database is locked" after SQLite's default 5 s.
+
+MERGE-CRITICAL (whole file): every route must get its session from
+``get_db`` below, and the tests build their databases with
+``configure_sqlite``. If this file is replaced by a plain
+``SessionLocal()``/``get_db`` (as on older branches): simultaneous changes
+start failing with 500s and "database is locked", and two requests can break
+team/admin rules (a lead who isn't a member, no admins left).
+Guarded by: tests/server/test_concurrency.py.
+
+Other branches may add helpers here (e.g. a session factory for websockets):
+add them below, but keep ``configure_sqlite``, ``open_session`` and this
+``get_db``.
+"""
+
+from collections.abc import Iterator
+
+from fastapi import Request
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-DB_PATH = Path(__file__).parent / "kairos.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+from server.db.config import DATABASE_URL
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+#: Seconds a request waits for the write lock before giving up.
+BUSY_TIMEOUT_SECONDS = 30
+
+#: HTTP methods that only read, and so never need the write lock.
+READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+#: Writes that may skip the up-front lock. Empty since the merge: Kaleb's
+#: sign-in routes (/auth/signup, /auth/login, /auth/verify-code) hash and write
+#: in one transaction, so they take the lock from the start like every other
+#: write. Hashing (~0.1 s) then happens inside it -- fine at this app's scale.
+NO_LOCK_PATHS: frozenset[str] = frozenset()
+
+_BEGIN_MODE = "sqlite_begin_mode"
 
 
-def get_db() -> Iterator[Session]:
-    """FastAPI dependency that yields a request-scoped DB session."""
-    db = SessionLocal()
+def configure_sqlite(engine: Engine) -> Engine:
+    """Apply the settings above to ``engine``. Also used by the tests, so
+    they run against the same behaviour as the real server.
+    """
+
+    @event.listens_for(engine, "connect")
+    def _on_connect(dbapi_connection, _record) -> None:
+        """Runs for each new database connection: hand transactions to SQLAlchemy, then switch on
+        WAL and the busy timeout.
+        """
+        # Hand transaction control to SQLAlchemy (the "begin" hook below):
+        # the sqlite3 driver's own automatic BEGIN can't be IMMEDIATE.
+        dbapi_connection.isolation_level = None
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_SECONDS * 1000}")
+        cursor.close()
+
+    @event.listens_for(engine, "begin")
+    def _on_begin(connection) -> None:
+        """Runs at the start of each transaction: BEGIN IMMEDIATE for writes, BEGIN DEFERRED
+        otherwise.
+        """
+        mode = connection.get_execution_options().get(_BEGIN_MODE, "DEFERRED")
+        connection.exec_driver_sql(f"BEGIN {mode}")
+
+    return engine
+
+
+def needs_write_lock(request: Request | None) -> bool:
+    """True for requests that change data (POST, PUT, PATCH, DELETE), apart
+    from sign-in/sign-up, which take the lock themselves after hashing.
+    """
+    return (
+        request is not None
+        and request.method not in READ_ONLY_METHODS
+        and request.url.path not in NO_LOCK_PATHS
+    )
+
+
+def open_session(factory: sessionmaker[Session], request: Request | None) -> Iterator[Session]:
+    """Yield a session for one request, holding the write lock from the
+    start if the request changes data.
+    """
+    if needs_write_lock(request):
+        # Every transaction of this request starts BEGIN IMMEDIATE -- before any
+        # check reads a row -- including ones after a commit part-way through
+        # (the session lookup commits when it slides a session's expiry).
+        immediate = factory.kw["bind"].execution_options(**{_BEGIN_MODE: "IMMEDIATE"})
+        db = factory(bind=immediate)
+    else:
+        db = factory()
     try:
         yield db
     finally:
         db.close()
 
 
+# The one engine for the real database file (server/db/config.py says where).
+# "check_same_thread": False lets FastAPI's worker threads share connections;
+# "timeout" is the driver-level twin of the busy timeout above.
+engine = configure_sqlite(
+    create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False, "timeout": BUSY_TIMEOUT_SECONDS},
+    )
+)
+#: Makes a new session (one unit of work) on the real database. Tests point
+#: code at their own throwaway factory instead -- never at this one.
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def get_db(request: Request = None) -> Iterator[Session]:  # type: ignore[assignment]
+    """FastAPI dependency that yields a request-scoped DB session.
+
+    ``request`` defaults to None for callers outside a request (start-up),
+    which get an ordinary transaction.
+    """
+    yield from open_session(SessionLocal, request)
+
+
 def get_session_factory() -> sessionmaker[Session]:
     """A dependency that resolves to the active sessionmaker itself.
 
-    For code that needs to open and close its own short-lived session rather than
-    hold a request-scoped one for its whole lifetime - namely the WebSocket endpoint
-    (server/api/ws_chat.py), where `Depends(get_db)` would otherwise stay open for
-    the entire connection. Overridable in tests the same way as `get_db`.
+    For code that opens and closes its own short-lived sessions instead of
+    holding one request-scoped session -- the WebSocket endpoint
+    (server/api/ws_chat.py), where ``Depends(get_db)`` would stay open for the
+    whole connection. Overridable in tests the same way as ``get_db``.
     """
     return SessionLocal

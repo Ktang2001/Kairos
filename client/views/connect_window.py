@@ -307,8 +307,10 @@ class ConnectWindow(QMainWindow):
 
     def _enter_app_shell(self, display_name: str, server_label: str) -> None:
         is_admin = False
+        role = None
         try:
-            is_admin = self.api_client.get_my_profile().get("role") == "admin"
+            role = self.api_client.get_my_profile().get("role")
+            is_admin = role == "admin"
         except httpx.HTTPError:
             pass  # default to non-admin rather than fail the whole sign-in
 
@@ -319,6 +321,7 @@ class ConnectWindow(QMainWindow):
             on_switch_account=self._on_switch_account,
             is_admin=is_admin,
             theme_manager=self.theme_manager,
+            role=role,
         )
         self._app_shell.show()
         self.hide()

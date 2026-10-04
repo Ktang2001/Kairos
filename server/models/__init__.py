@@ -1,3 +1,13 @@
+"""Every database table, imported in one place.
+
+Importing this package registers all models on ``Base.metadata``, which is what
+Alembic (migrations) and the tests use to know the full schema.
+
+MERGE-CRITICAL: when merging another branch's models, add its imports here and
+keep all of these. A model missing from this file is missing from every test
+database, and its tests fail with "no such table".
+"""
+
 from server.models.attachment import Attachment
 from server.models.base import Base
 from server.models.chat_message import ChatMessage

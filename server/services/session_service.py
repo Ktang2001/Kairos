@@ -1,6 +1,7 @@
 import secrets
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session as DbSession
 
 from server.models.session import Session
@@ -47,11 +48,19 @@ def resolve_session(db: DbSession, token: str) -> User | None:
     if expires_at < now:
         return None
 
+    user_id = session.user_id
     session.last_used_at = now
     session.expires_at = now + SESSION_IDLE_LIFETIME
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError:
+        # Best effort: a read-only request whose snapshot went stale because
+        # another request wrote at the same moment can't write this bump
+        # (SQLite refuses at once in WAL mode). The session is still valid;
+        # the next request slides the expiry instead of this one failing.
+        db.rollback()
 
-    return db.get(User, session.user_id)
+    return db.get(User, user_id)
 
 
 def delete_session(db: DbSession, token: str) -> None:

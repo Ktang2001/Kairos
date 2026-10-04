@@ -1,3 +1,7 @@
-from client.api_client.client import ApiClient
+"""The client's connection to the server. ``ApiClient`` (in client.py) makes every
+HTTP request; screens never call httpx themselves.
+"""
 
-__all__ = ["ApiClient"]
+from client.api_client.client import ApiClient, ApiError, is_connection_error
+
+__all__ = ["ApiClient", "ApiError", "is_connection_error"]

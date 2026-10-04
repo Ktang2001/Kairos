@@ -1,6 +1,11 @@
+import sys
+
+import pytest
+
 from server.tls import ensure_server_cert, fingerprint_sha256
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions (chmod 600)")
 def test_ensure_server_cert_creates_files_with_safe_permissions(tmp_path) -> None:
     cert_path = tmp_path / "cert.pem"
     key_path = tmp_path / "key.pem"

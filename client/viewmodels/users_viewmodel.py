@@ -1,0 +1,105 @@
+"""The admin Users screen, without any widgets (context.md goal #2).
+
+Lists every account and changes roles. The server allows this for admins
+only and never for your own account; the screen hides it accordingly, but
+the server's answer is what counts.
+"""
+
+from PySide6.QtCore import QObject, Signal
+
+from client.viewmodels.background import BackgroundRunner
+from client.viewmodels.session import Session
+
+
+class UsersViewModel(QObject):
+    """State and actions for the admin Users tab: every account, and changing roles."""
+
+    users_changed = Signal(list)
+    busy_changed = Signal(bool)
+    #: The message to show, or "" to clear it.
+    error_changed = Signal(str)
+
+    def __init__(
+        self,
+        session: Session,
+        runner: BackgroundRunner | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.session = session
+        self._runner = runner or BackgroundRunner(self)
+        self._busy = False
+        #: A refresh was asked for while busy; it runs when the current job ends.
+        self._refresh_again = False
+        self.users: list[dict] = []
+        #: False until the first load finishes ("Loading..." until then).
+        self.loaded = False
+
+    @property
+    def busy(self) -> bool:
+        """True while a request is in flight."""
+        return self._busy
+
+    @property
+    def my_id(self) -> int:
+        """The signed-in admin's own id (their row can't be changed)."""
+        return self.session.user["id"]
+
+    def refresh(self) -> None:
+        """Reload the list; if a job is running, reload once it finishes
+        (see TeamsViewModel.refresh).
+        """
+        if self._busy:
+            self._refresh_again = True
+            return
+        self._run(None)
+
+    def set_role(self, user_id: int, role: str) -> None:
+        """Change a user's role, unless it is already that role."""
+        current = next((u for u in self.users if u["id"] == user_id), None)
+        if current is not None and current["role"] == role:
+            return
+        self._run(lambda client: client.set_role(user_id, role))
+
+    def _run(self, action) -> None:
+        """Do ``action`` (if any) then reload the list, on a background thread. Ignored while busy."""
+        if self._busy:
+            return
+        client = self.session.client
+
+        def job() -> list[dict]:
+            """Runs on the background thread: the action (if any), then the fresh list."""
+            if action is not None:
+                action(client)
+            return client.list_users()
+
+        self.error_changed.emit("")
+        self._set_busy(True)
+        self._runner.run(job, on_success=self._loaded, on_error=self._failed)
+
+    def _loaded(self, users: list[dict]) -> None:
+        """Main thread: store the fresh list and tell the view; run a refresh queued meanwhile."""
+        self.loaded = True
+        self._set_busy(False)
+        self.users = users
+        self.users_changed.emit(users)
+        self._run_queued_refresh()
+
+    def _failed(self, message: str) -> None:
+        """Main thread: show the error, put refused changes back; run a refresh queued meanwhile."""
+        self._set_busy(False)
+        self.error_changed.emit(message)
+        # Re-show the server's real roles, so a refused change snaps back.
+        self.users_changed.emit(self.users)
+        self._run_queued_refresh()
+
+    def _run_queued_refresh(self) -> None:
+        """Run the one refresh asked for while busy, if any."""
+        if self._refresh_again:
+            self._refresh_again = False
+            self.refresh()
+
+    def _set_busy(self, busy: bool) -> None:
+        """Record whether a request is in flight and tell the view."""
+        self._busy = busy
+        self.busy_changed.emit(busy)
