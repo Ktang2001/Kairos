@@ -16,6 +16,7 @@ server/db/tls/
 
 # Database
 server/db/kairos.db
+server/db/*.bak-*
 *.db
 # SQLite WAL-mode companions of a live database (see server/db/session.py)
 *.db-wal
