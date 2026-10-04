@@ -97,6 +97,7 @@ def test_signing_in_enters_app_shell(qtbot, monkeypatch, tmp_path) -> None:
     def _fake_exec(self):
         self.result_user_id = 1
         self.result_user_name = "Alice"
+        self.result_token = "tok-alice"
         return AuthDialog.DialogCode.Accepted
 
     monkeypatch.setattr(AuthDialog, "exec", _fake_exec)
@@ -114,7 +115,7 @@ def test_signing_in_enters_app_shell(qtbot, monkeypatch, tmp_path) -> None:
     assert window._app_shell is not None
     assert window.isHidden()
     assert "Alice" in window._app_shell.header_label.text()
-    assert identity_vm.load_cached_identity(vm.list_servers()[0].id) == (1, "Alice")
+    assert identity_vm.load_cached_identity(vm.list_servers()[0].id) == (1, "Alice", "tok-alice")
 
 
 def test_cached_identity_auto_enters_app_shell_on_reconnect(qtbot, monkeypatch, tmp_path) -> None:
@@ -128,7 +129,7 @@ def test_cached_identity_auto_enters_app_shell_on_reconnect(qtbot, monkeypatch, 
     vm = _isolated_viewmodel(tmp_path)
     server = vm.add_server(host="192.168.1.10", port=8000)
     identity_vm = _isolated_identity_viewmodel(tmp_path)
-    identity_vm.set_identity(server.id, 7, "Bob")
+    identity_vm.set_identity(server.id, 7, "Bob", "tok-bob")
 
     window = _make_window(tmp_path, server_list_vm=vm, identity_vm=identity_vm)
     qtbot.addWidget(window)
@@ -137,6 +138,7 @@ def test_cached_identity_auto_enters_app_shell_on_reconnect(qtbot, monkeypatch, 
 
     assert window._app_shell is not None
     assert window.api_client.user_id == 7
+    assert window.api_client.token == "tok-bob"
 
 
 def test_switch_account_returns_to_connect_window(qtbot, monkeypatch, tmp_path) -> None:
@@ -146,11 +148,13 @@ def test_switch_account_returns_to_connect_window(qtbot, monkeypatch, tmp_path) 
     )
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
     monkeypatch.setattr(ApiClient, "get_my_profile", lambda self: {"role": "member"})
+    logged_out = []
+    monkeypatch.setattr(ApiClient, "logout", lambda self: logged_out.append(True))
 
     vm = _isolated_viewmodel(tmp_path)
     server = vm.add_server(host="192.168.1.10", port=8000)
     identity_vm = _isolated_identity_viewmodel(tmp_path)
-    identity_vm.set_identity(server.id, 7, "Bob")
+    identity_vm.set_identity(server.id, 7, "Bob", "tok-bob")
 
     window = _make_window(tmp_path, server_list_vm=vm, identity_vm=identity_vm)
     qtbot.addWidget(window)
@@ -161,6 +165,8 @@ def test_switch_account_returns_to_connect_window(qtbot, monkeypatch, tmp_path) 
 
     assert window._app_shell is None
     assert window.isHidden() is False
+    assert logged_out == [True]
+    assert identity_vm.load_cached_identity(server.id) is None
 
 
 def test_admin_role_grants_server_settings_nav(qtbot, monkeypatch, tmp_path) -> None:
@@ -176,6 +182,7 @@ def test_admin_role_grants_server_settings_nav(qtbot, monkeypatch, tmp_path) -> 
     def _fake_exec(self):
         self.result_user_id = 1
         self.result_user_name = "Alice"
+        self.result_token = "tok-alice"
         return AuthDialog.DialogCode.Accepted
 
     monkeypatch.setattr(AuthDialog, "exec", _fake_exec)
@@ -211,6 +218,7 @@ def test_profile_lookup_failure_defaults_to_non_admin(qtbot, monkeypatch, tmp_pa
     def _fake_exec(self):
         self.result_user_id = 1
         self.result_user_name = "Alice"
+        self.result_token = "tok-alice"
         return AuthDialog.DialogCode.Accepted
 
     monkeypatch.setattr(AuthDialog, "exec", _fake_exec)

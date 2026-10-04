@@ -52,7 +52,7 @@ def test_get_person_404_for_unknown_id(client: TestClient) -> None:
 def test_get_my_profile_includes_role(client: TestClient, make_user) -> None:
     alice = make_user("Alice Anderson", "alice@example.com", role_name="admin")
 
-    response = client.get("/people/me", headers=auth_headers(alice.id))
+    response = client.get("/people/me", headers=auth_headers(alice.token))
 
     assert response.status_code == 200
     body = response.json()
@@ -70,7 +70,7 @@ def test_me_route_is_not_swallowed_by_user_id_route(client: TestClient, make_use
     """Regression check: /people/me must be registered before /people/{user_id}."""
     alice = make_user("Alice Anderson", "alice@example.com")
 
-    response = client.get("/people/me", headers=auth_headers(alice.id))
+    response = client.get("/people/me", headers=auth_headers(alice.token))
 
     assert response.status_code == 200
     assert response.json()["id"] == alice.id

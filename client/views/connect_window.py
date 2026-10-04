@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from client.api_client import ApiClient
-from client.net import DiscoveredServer, DiscoveryListener
+from client.net import DiscoveredServer, DiscoveryListener, fetch_server_cert_pem
 from client.theme import ThemeManager
 from client.viewmodels.identity_viewmodel import IdentityViewModel
 from client.viewmodels.server_list_viewmodel import KnownServer, ServerListViewModel
@@ -211,8 +211,25 @@ class ConnectWindow(QMainWindow):
         host renamed it since it was last saved. If we already know who this user
         is on this server, sign-in is silent; otherwise the Sign In dialog opens
         automatically since there's no dashboard to reach without an identity.
+
+        The very first connection to a server pins its TLS certificate
+        (trust-on-first-use - see client/net/cert_pinning.py); every later
+        connection verifies against exactly that pinned certificate, so a changed
+        certificate fails closed here rather than silently succeeding.
         """
-        client = ApiClient(base_url=server.base_url)
+        cert_pem = server.cert_pem
+        freshly_pinned = cert_pem is None
+        if freshly_pinned:
+            try:
+                cert_pem = fetch_server_cert_pem(server.host, server.port)
+            except OSError as exc:
+                self.api_client = None
+                self._current_server = None
+                self.sign_in_button.setEnabled(False)
+                self.status_label.setText(f"Connection failed: {exc}")
+                return
+
+        client = ApiClient(base_url=server.base_url, cert_pem=cert_pem)
         try:
             client.health()
             info = client.get_server_info()
@@ -220,8 +237,17 @@ class ConnectWindow(QMainWindow):
             self.api_client = None
             self._current_server = None
             self.sign_in_button.setEnabled(False)
-            self.status_label.setText(f"Connection failed: {exc}")
+            if not freshly_pinned and "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                self.status_label.setText(
+                    "This server's identity has changed since you last connected - "
+                    "if it wasn't reinstalled/reset, treat this as suspicious."
+                )
+            else:
+                self.status_label.setText(f"Connection failed: {exc}")
             return
+
+        if freshly_pinned:
+            self.server_list_vm.update_cert_pem(server.id, cert_pem)
 
         display_name = info.get("display_name") or server.label
         self.server_list_vm.update_display_name_cache(server.id, display_name)
@@ -235,7 +261,8 @@ class ConnectWindow(QMainWindow):
 
         cached = self.identity_vm.load_cached_identity(server.id)
         if cached is not None:
-            user_id, user_name = cached
+            user_id, user_name, token = cached
+            self.api_client.token = token
             self.api_client.user_id = user_id
             self.identity_label.setText(f"Signed in as {user_name}")
             self._enter_app_shell(user_name, display_name)
@@ -259,13 +286,19 @@ class ConnectWindow(QMainWindow):
         if self.api_client is None or self._current_server is None:
             return
 
-        dialog = AuthDialog(self.api_client.base_url, self)
+        dialog = AuthDialog(
+            self.api_client.base_url, cert_pem=self.api_client.cert_pem, parent=self
+        )
         if dialog.exec() != AuthDialog.DialogCode.Accepted:
             return
 
         self.identity_vm.set_identity(
-            self._current_server.id, dialog.result_user_id, dialog.result_user_name
+            self._current_server.id,
+            dialog.result_user_id,
+            dialog.result_user_name,
+            dialog.result_token,
         )
+        self.api_client.token = dialog.result_token
         self.api_client.user_id = dialog.result_user_id
         self.identity_label.setText(f"Signed in as {dialog.result_user_name}")
 
@@ -294,6 +327,14 @@ class ConnectWindow(QMainWindow):
         if self._app_shell is not None:
             self._app_shell.close()
             self._app_shell = None
+        if self.api_client is not None:
+            try:
+                self.api_client.logout()
+            except httpx.HTTPError:
+                pass  # best-effort - still proceed to sign out locally
+        if self._current_server is not None:
+            self.identity_vm.clear(self._current_server.id)
+        self.identity_label.setText("Not signed in")
         self.show()
 
     def closeEvent(self, event) -> None:

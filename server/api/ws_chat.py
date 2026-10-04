@@ -11,7 +11,7 @@ router = APIRouter(tags=["realtime"])
 @router.websocket("/ws/chat")
 async def chat_websocket(
     websocket: WebSocket,
-    user_id: int,
+    token: str,
     session_factory: sessionmaker[Session] = Depends(get_session_factory),  # noqa: B008
 ) -> None:
     """Push-only notification channel for an already-identified user.
@@ -23,11 +23,12 @@ async def chat_websocket(
     request-scoped and would otherwise stay open for the socket's whole lifetime -
     mirrors the pattern in server/gui.py::_poll_new_messages. The factory
     indirection (rather than importing SessionLocal directly) is what lets tests
-    override it the same way they override `get_db`.
+    override it the same way they override `get_db`. `token` is a query param (not
+    a header) since WebSocket handshakes can't always carry custom headers.
     """
     db = session_factory()
     try:
-        resolved_user_id = resolve_ws_user_id(db, user_id)
+        resolved_user_id = resolve_ws_user_id(db, token)
     finally:
         db.close()
 

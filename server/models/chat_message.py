@@ -4,6 +4,7 @@ from sqlalchemy import DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.models.base import Base
+from server.models.encrypted_text import EncryptedText
 
 
 class ChatMessage(Base):
@@ -18,7 +19,9 @@ class ChatMessage(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
     sender_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    body: Mapped[str | None]
+    # Encrypted at rest (see server/crypto.py) - transparent to every call site,
+    # which keeps reading/writing a plain str exactly as before.
+    body: Mapped[str | None] = mapped_column(EncryptedText())
     client_token: Mapped[str | None] = mapped_column(unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(), server_default=func.now(), nullable=False, index=True

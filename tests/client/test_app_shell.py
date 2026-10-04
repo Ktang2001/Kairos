@@ -12,7 +12,7 @@ def _isolated_theme_manager(tmp_path) -> ThemeManager:
 
 
 def test_defaults_to_dashboard_and_switches_to_chat(qtbot, monkeypatch, tmp_path) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
 
     switched = []
@@ -35,7 +35,7 @@ def test_defaults_to_dashboard_and_switches_to_chat(qtbot, monkeypatch, tmp_path
 
 
 def test_switch_account_button_invokes_callback(qtbot, monkeypatch, tmp_path) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
 
     switched = []
@@ -57,7 +57,7 @@ def test_switch_account_button_invokes_callback(qtbot, monkeypatch, tmp_path) ->
 
 
 def test_non_admin_does_not_get_server_settings_nav(qtbot, monkeypatch, tmp_path) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=2)
+    api = ApiClient(base_url="http://localhost:8000", user_id=2, token="tok-2")
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
 
     shell = AppShell(
@@ -76,7 +76,7 @@ def test_non_admin_does_not_get_server_settings_nav(qtbot, monkeypatch, tmp_path
 
 
 def test_admin_gets_server_settings_nav(qtbot, monkeypatch, tmp_path) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
     monkeypatch.setattr(
         ApiClient,

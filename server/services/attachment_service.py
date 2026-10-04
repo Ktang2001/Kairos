@@ -1,10 +1,12 @@
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from server import crypto
 from server.models.attachment import Attachment
 from server.models.chat_message import ChatMessage
 from server.models.server_settings import ServerSettings
@@ -87,16 +89,26 @@ def save_attachment(
     stored_filename = f"{uuid.uuid4().hex}{_safe_suffix(upload.filename or '')}"
     target_path = _contained_path(root, stored_filename)
 
+    key = crypto.get_default_key()
+    # A fresh random nonce base per file - required so two different files never
+    # reuse the same (key, nonce) pair under AES-GCM (see server/crypto.py).
+    file_nonce = crypto.generate_file_nonce()
     size_bytes = 0
     try:
         with target_path.open("wb") as out_file:
+            out_file.write(file_nonce)
+            chunk_index = 0
             while chunk := upload.file.read(CHUNK_SIZE):
                 size_bytes += len(chunk)
                 if size_bytes > settings.max_upload_size_bytes:
                     raise UploadTooLargeError(
                         f"upload exceeds the {settings.max_upload_size_bytes}-byte limit"
                     )
-                out_file.write(chunk)
+                # Encrypted at rest (see server/crypto.py) - chunked AESGCM rather
+                # than Fernet, since a complete-blob cipher would mean buffering an
+                # entire video file in memory to encrypt it.
+                out_file.write(crypto.encrypt_chunk(key, file_nonce, chunk_index, chunk))
+                chunk_index += 1
     except Exception:
         target_path.unlink(missing_ok=True)
         raise
@@ -131,3 +143,13 @@ def resolve_download_path(db: Session, attachment: Attachment) -> Path:
     settings = _get_settings(db)
     root = _resolve_upload_root(settings.upload_root)
     return _contained_path(root, attachment.stored_filename)
+
+
+def stream_decrypted_attachment(path: Path) -> Iterator[bytes]:
+    """Decrypts the file at `path` (written chunk-by-chunk by save_attachment)
+    and yields it back in order, so the API layer can stream a response without
+    ever buffering the whole file in memory."""
+    key = crypto.get_default_key()
+    with path.open("rb") as in_file:
+        file_nonce = in_file.read(crypto.NONCE_SIZE)
+        yield from crypto.decrypt_stream(key, file_nonce, in_file.read)

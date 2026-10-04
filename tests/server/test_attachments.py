@@ -9,7 +9,7 @@ from tests.server.conftest import auth_headers
 
 def _start_direct_conversation(client: TestClient, alice, bob) -> dict:
     return client.post(
-        "/conversations/direct", json={"other_user_id": bob.id}, headers=auth_headers(alice.id)
+        "/conversations/direct", json={"other_user_id": bob.id}, headers=auth_headers(alice.token)
     ).json()
 
 
@@ -21,7 +21,7 @@ def test_upload_and_download_roundtrip(client: TestClient, make_user) -> None:
     upload = client.post(
         f"/conversations/{conversation['id']}/attachments",
         files={"file": ("notes.txt", io.BytesIO(b"hello world"), "text/plain")},
-        headers=auth_headers(alice.id),
+        headers=auth_headers(alice.token),
     )
     assert upload.status_code == 200
     body = upload.json()
@@ -30,10 +30,37 @@ def test_upload_and_download_roundtrip(client: TestClient, make_user) -> None:
     assert attachment["original_filename"] == "notes.txt"
     assert "stored_filename" not in attachment
 
-    download = client.get(f"/attachments/{attachment['id']}/download", headers=auth_headers(bob.id))
+    download = client.get(
+        f"/attachments/{attachment['id']}/download", headers=auth_headers(bob.token)
+    )
     assert download.status_code == 200
     assert download.content == b"hello world"
     assert "notes.txt" in download.headers["content-disposition"]
+
+
+def test_stored_file_on_disk_is_encrypted_not_plaintext(
+    client: TestClient, make_user, db_session
+) -> None:
+    alice = make_user("Alice", "alice@example.com")
+    bob = make_user("Bob", "bob@example.com")
+    conversation = _start_direct_conversation(client, alice, bob)
+    secret_content = b"my bank PIN is 4471"
+
+    upload = client.post(
+        f"/conversations/{conversation['id']}/attachments",
+        files={"file": ("notes.txt", io.BytesIO(secret_content), "text/plain")},
+        headers=auth_headers(alice.token),
+    )
+    assert upload.status_code == 200
+
+    settings = db_session.get(ServerSettings, 1)
+    upload_root = Path(settings.upload_root).expanduser().resolve()
+    stored_files = list(upload_root.iterdir())
+    assert len(stored_files) == 1
+    on_disk_bytes = stored_files[0].read_bytes()
+
+    assert on_disk_bytes != secret_content
+    assert secret_content not in on_disk_bytes
 
 
 def test_upload_rejects_path_traversal_filename(client: TestClient, make_user, db_session) -> None:
@@ -44,7 +71,7 @@ def test_upload_rejects_path_traversal_filename(client: TestClient, make_user, d
     upload = client.post(
         f"/conversations/{conversation['id']}/attachments",
         files={"file": ("../../evil.sh", io.BytesIO(b"#!/bin/sh\necho pwned"), "text/plain")},
-        headers=auth_headers(alice.id),
+        headers=auth_headers(alice.token),
     )
 
     assert upload.status_code == 200
@@ -73,7 +100,7 @@ def test_upload_rejects_oversized_file(client: TestClient, make_user, db_session
     upload = client.post(
         f"/conversations/{conversation['id']}/attachments",
         files={"file": ("big.bin", io.BytesIO(b"x" * 1000), "application/octet-stream")},
-        headers=auth_headers(alice.id),
+        headers=auth_headers(alice.token),
     )
 
     assert upload.status_code == 413
@@ -82,7 +109,7 @@ def test_upload_rejects_oversized_file(client: TestClient, make_user, db_session
     assert list(upload_root.iterdir()) == []
 
     messages = client.get(
-        f"/conversations/{conversation['id']}/messages", headers=auth_headers(alice.id)
+        f"/conversations/{conversation['id']}/messages", headers=auth_headers(alice.token)
     ).json()
     assert messages == []
 
@@ -96,11 +123,11 @@ def test_download_denied_for_non_participant(client: TestClient, make_user) -> N
     upload = client.post(
         f"/conversations/{conversation['id']}/attachments",
         files={"file": ("notes.txt", io.BytesIO(b"secret"), "text/plain")},
-        headers=auth_headers(alice.id),
+        headers=auth_headers(alice.token),
     ).json()
     attachment_id = upload["attachments"][0]["id"]
 
     response = client.get(
-        f"/attachments/{attachment_id}/download", headers=auth_headers(mallory.id)
+        f"/attachments/{attachment_id}/download", headers=auth_headers(mallory.token)
     )
     assert response.status_code == 403

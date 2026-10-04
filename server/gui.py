@@ -25,6 +25,7 @@ from server.db.session import SessionLocal
 from server.discovery_announcer import DiscoveryAnnouncer
 from server.main import app
 from server.services import message_service, server_settings_service
+from server.tls import ensure_server_cert, fingerprint_sha256
 
 HOST = "0.0.0.0"
 PORT = 8000
@@ -32,6 +33,9 @@ MAX_PORT_ATTEMPTS = 20
 # Shared with the client - see client/main.py - rather than duplicating the asset.
 ICON_PATH = Path(__file__).resolve().parent.parent / "client" / "resources" / "kairos.svg"
 DESKTOP_FILE_ID = "kairos-server"
+TLS_DIR = Path(__file__).resolve().parent / "db" / "tls"
+CERT_PATH = TLS_DIR / "cert.pem"
+KEY_PATH = TLS_DIR / "key.pem"
 
 
 def find_free_port(host: str, start_port: int, max_attempts: int = MAX_PORT_ATTEMPTS) -> int:
@@ -69,6 +73,8 @@ class ServerWindow(QMainWindow):
         self.status_label = QLabel("Server stopped")
         self.toggle_button = QPushButton("Start Server")
         self.toggle_button.clicked.connect(self._on_toggle_clicked)
+        self.fingerprint_label = QLabel("")
+        self.fingerprint_label.setWordWrap(True)
 
         self.log = QTextEdit(readOnly=True)
 
@@ -77,6 +83,7 @@ class ServerWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.addWidget(self.status_label)
         layout.addWidget(self.toggle_button)
+        layout.addWidget(self.fingerprint_label)
         layout.addWidget(settings_box)
         layout.addWidget(self.log)
 
@@ -173,7 +180,16 @@ class ServerWindow(QMainWindow):
             self.status_label.setText(str(exc))
             return
 
-        config = uvicorn.Config(app, host=HOST, port=port, log_level="info")
+        ensure_server_cert(CERT_PATH, KEY_PATH)
+
+        config = uvicorn.Config(
+            app,
+            host=HOST,
+            port=port,
+            log_level="info",
+            ssl_certfile=str(CERT_PATH),
+            ssl_keyfile=str(KEY_PATH),
+        )
         self._uvicorn_server = uvicorn.Server(config)
         self._server_thread = threading.Thread(target=self._uvicorn_server.run, daemon=True)
         self._server_thread.start()
@@ -181,7 +197,11 @@ class ServerWindow(QMainWindow):
 
         lan_ip = socket.gethostbyname(socket.gethostname())
         note = f" (port {PORT} was taken, picked {port})" if port != PORT else ""
-        self.status_label.setText(f"Server running - give clients: http://{lan_ip}:{port}{note}")
+        self.status_label.setText(f"Server running - give clients: https://{lan_ip}:{port}{note}")
+        self.fingerprint_label.setText(
+            "Certificate fingerprint (optional - compare over a trusted channel for "
+            f"stronger-than-first-connect assurance): {fingerprint_sha256(CERT_PATH)}"
+        )
         self.toggle_button.setText("Stop Server")
         self._poll_timer.start()
 
@@ -203,6 +223,7 @@ class ServerWindow(QMainWindow):
         self._port = None
         self._poll_timer.stop()
         self.status_label.setText("Server stopped")
+        self.fingerprint_label.setText("")
         self.toggle_button.setText("Start Server")
 
     def _poll_new_messages(self) -> None:

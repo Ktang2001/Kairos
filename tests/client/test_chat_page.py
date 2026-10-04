@@ -5,7 +5,7 @@ from client.views.new_group_dialog import NewGroupDialog
 
 
 def test_loads_conversations_on_init(qtbot, monkeypatch) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(
         ApiClient,
         "list_conversations",
@@ -32,7 +32,7 @@ def test_loads_conversations_on_init(qtbot, monkeypatch) -> None:
 
 
 def test_empty_state_message(qtbot, monkeypatch) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
 
     page = ChatPage(api)
@@ -43,7 +43,7 @@ def test_empty_state_message(qtbot, monkeypatch) -> None:
 
 
 def test_selecting_a_conversation_shows_it_inline_no_popup(qtbot, monkeypatch) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(
         ApiClient,
         "list_conversations",
@@ -70,7 +70,7 @@ def test_selecting_a_conversation_shows_it_inline_no_popup(qtbot, monkeypatch) -
 
 
 def test_new_chat_flow_selects_the_new_conversation(qtbot, monkeypatch) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
     monkeypatch.setattr(
         ApiClient, "start_direct_conversation", lambda self, other_user_id: {"id": 5}
@@ -95,7 +95,7 @@ def test_new_chat_flow_selects_the_new_conversation(qtbot, monkeypatch) -> None:
 
 
 def test_new_group_flow_selects_the_new_conversation(qtbot, monkeypatch) -> None:
-    api = ApiClient(base_url="http://localhost:8000", user_id=1)
+    api = ApiClient(base_url="http://localhost:8000", user_id=1, token="tok-1")
     monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
     monkeypatch.setattr(
         ApiClient,

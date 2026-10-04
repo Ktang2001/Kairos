@@ -13,10 +13,14 @@ class KnownServer:
     nickname: str | None = None
     display_name_cache: str | None = None
     last_connected_at: str | None = None
+    # The server's TLS certificate, pinned the first time this server was connected
+    # to (trust-on-first-use - see client/net/cert_pinning.py and server/tls.py).
+    # None only momentarily, between adding the entry and that first connection.
+    cert_pem: str | None = None
 
     @property
     def base_url(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        return f"https://{self.host}:{self.port}"
 
     @property
     def label(self) -> str:
@@ -52,6 +56,7 @@ class ServerListViewModel:
                     nickname=self._settings.value("nickname", "") or None,
                     display_name_cache=self._settings.value("display_name_cache", "") or None,
                     last_connected_at=self._settings.value("last_connected_at", "") or None,
+                    cert_pem=self._settings.value("cert_pem", "") or None,
                 )
             )
         self._settings.endArray()
@@ -67,6 +72,7 @@ class ServerListViewModel:
             self._settings.setValue("nickname", server.nickname or "")
             self._settings.setValue("display_name_cache", server.display_name_cache or "")
             self._settings.setValue("last_connected_at", server.last_connected_at or "")
+            self._settings.setValue("cert_pem", server.cert_pem or "")
         self._settings.endArray()
 
     def add_server(
@@ -99,6 +105,13 @@ class ServerListViewModel:
         for server in servers:
             if server.id == server_id:
                 server.display_name_cache = display_name
+        self._save_all(servers)
+
+    def update_cert_pem(self, server_id: str, cert_pem: str) -> None:
+        servers = self.list_servers()
+        for server in servers:
+            if server.id == server_id:
+                server.cert_pem = cert_pem
         self._save_all(servers)
 
     def mark_connected(self, server_id: str) -> None:

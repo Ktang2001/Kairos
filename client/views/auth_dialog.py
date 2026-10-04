@@ -2,39 +2,95 @@ import httpx
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from client.net.cert_pinning import build_pinned_ssl_context
+
 
 class AuthDialog(QDialog):
     """Sign up for a new Kairos account or log in to an existing one.
 
-    This is real credential-backed identification (password hashed + verified
-    server-side - see server/services/auth_service.py). Per-request authorization
-    elsewhere still relies on the placeholder X-Kairos-User-Id header (see
-    server/api/dependencies.py) until real sessions/tokens replace it.
+    Real credential-backed identification (password hashed + verified server-side -
+    see server/services/auth_service.py), followed by a second step: an emailed
+    6-digit 2FA code (server/services/verification_service.py) must be entered
+    before a session is issued - required on both signup and login, so an
+    account can't be created with an email the signer-upper doesn't actually
+    control. Only once that code is confirmed does the server return a session
+    token (see server/services/session_service.py), which every subsequent
+    request must carry as `Authorization: Bearer <token>`
+    (see server/api/dependencies.py).
     """
 
-    def __init__(self, base_url: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, base_url: str, cert_pem: str | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Sign in to Kairos")
         self._base_url = base_url
+        # Same pinned-certificate trust as ApiClient (see client/net/cert_pinning.py) -
+        # this dialog makes its own requests rather than going through ApiClient,
+        # since no token exists yet at signup/login time.
+        self._verify = build_pinned_ssl_context(cert_pem) if cert_pem else True
+        self._pending_token: str | None = None
 
         self.result_user_id: int | None = None
         self.result_user_name: str | None = None
+        self.result_token: str | None = None
 
+        self._pages = QStackedWidget()
+        self._pages.addWidget(self._build_credentials_page())
+        self._pages.addWidget(self._build_verify_page())
+
+        layout = QVBoxLayout()
+        layout.addWidget(self._pages)
+        self.setLayout(layout)
+
+    def _build_credentials_page(self) -> QWidget:
         tabs = QTabWidget()
         tabs.addTab(self._build_login_tab(), "Log In")
         tabs.addTab(self._build_signup_tab(), "Sign Up")
 
+        page = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(tabs)
-        self.setLayout(layout)
+        page.setLayout(layout)
+        return page
+
+    def _build_verify_page(self) -> QWidget:
+        self.verify_info_label = QLabel("")
+        self.verify_info_label.setWordWrap(True)
+        self.verify_code_input = QLineEdit()
+        self.verify_status = QLabel("")
+
+        form = QFormLayout()
+        form.addRow("Code:", self.verify_code_input)
+
+        verify_button = QPushButton("Verify")
+        verify_button.clicked.connect(self._on_verify_code)
+        resend_button = QPushButton("Resend code")
+        resend_button.clicked.connect(self._on_resend_code)
+
+        button_row = QHBoxLayout()
+        button_row.addWidget(verify_button)
+        button_row.addWidget(resend_button)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.verify_info_label)
+        layout.addLayout(form)
+        layout.addLayout(button_row)
+        layout.addWidget(self.verify_status)
+
+        page = QWidget()
+        page.setLayout(layout)
+        return page
 
     def _build_login_tab(self) -> QWidget:
         self.login_email = QLineEdit()
@@ -82,6 +138,13 @@ class AuthDialog(QDialog):
         tab.setLayout(layout)
         return tab
 
+    def _enter_verify_step(self, email: str, pending_token: str) -> None:
+        self._pending_token = pending_token
+        self.verify_info_label.setText(f"We've emailed a 6-digit code to {email}.")
+        self.verify_code_input.clear()
+        self.verify_status.setText("")
+        self._pages.setCurrentIndex(1)
+
     def _on_login(self) -> None:
         email = self.login_email.text().strip()
         password = self.login_password.text()
@@ -94,6 +157,7 @@ class AuthDialog(QDialog):
                 f"{self._base_url}/auth/login",
                 json={"email": email, "password": password},
                 timeout=5,
+                verify=self._verify,
             )
         except httpx.HTTPError as exc:
             self.login_status.setText(f"Could not reach server: {exc}")
@@ -102,16 +166,18 @@ class AuthDialog(QDialog):
         if response.status_code == 401:
             self.login_status.setText("Incorrect email or password.")
             return
+        if response.status_code == 429:
+            self.login_status.setText(response.json().get("detail", "Too many attempts."))
+            return
         try:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             self.login_status.setText(f"Login failed: {exc}")
             return
 
-        person = response.json()
-        self.result_user_id = person["id"]
-        self.result_user_name = person["name"]
-        self.accept()
+        pending = response.json()
+        self.login_status.setText("")
+        self._enter_verify_step(pending["email"], pending["pending_token"])
 
     def _on_signup(self) -> None:
         name = self.signup_name.text().strip()
@@ -126,6 +192,7 @@ class AuthDialog(QDialog):
                 f"{self._base_url}/auth/signup",
                 json={"name": name, "email": email, "password": password},
                 timeout=5,
+                verify=self._verify,
             )
         except httpx.HTTPError as exc:
             self.signup_status.setText(f"Could not reach server: {exc}")
@@ -140,7 +207,68 @@ class AuthDialog(QDialog):
             self.signup_status.setText(f"Signup failed: {exc}")
             return
 
+        pending = response.json()
+        self.signup_status.setText("")
+        self._enter_verify_step(pending["email"], pending["pending_token"])
+
+    def _on_verify_code(self) -> None:
+        code = self.verify_code_input.text().strip()
+        if not code:
+            self.verify_status.setText("Enter the code.")
+            return
+
+        try:
+            response = httpx.post(
+                f"{self._base_url}/auth/verify-code",
+                json={"pending_token": self._pending_token, "code": code},
+                timeout=5,
+                verify=self._verify,
+            )
+        except httpx.HTTPError as exc:
+            self.verify_status.setText(f"Could not reach server: {exc}")
+            return
+
+        if response.status_code == 401:
+            self.verify_status.setText("Incorrect or expired code.")
+            return
+        try:
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            self.verify_status.setText(f"Verification failed: {exc}")
+            return
+
         person = response.json()
         self.result_user_id = person["id"]
         self.result_user_name = person["name"]
+        self.result_token = person["token"]
         self.accept()
+
+    def _on_resend_code(self) -> None:
+        try:
+            response = httpx.post(
+                f"{self._base_url}/auth/resend-code",
+                json={"pending_token": self._pending_token},
+                timeout=5,
+                verify=self._verify,
+            )
+        except httpx.HTTPError as exc:
+            self.verify_status.setText(f"Could not reach server: {exc}")
+            return
+
+        if response.status_code == 429:
+            self.verify_status.setText(
+                response.json().get("detail", "Please wait before retrying.")
+            )
+            return
+        if response.status_code == 404:
+            self.verify_status.setText(
+                "This verification attempt has expired - go back and try again."
+            )
+            return
+        try:
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            self.verify_status.setText(f"Could not resend code: {exc}")
+            return
+
+        self.verify_status.setText("A new code has been sent.")

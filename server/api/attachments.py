@@ -1,5 +1,7 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from server.api.dependencies import get_current_user_id
@@ -12,6 +14,16 @@ from server.services.attachment_service import UploadTooLargeError
 from server.services.conversation_service import NotParticipantError
 
 router = APIRouter(tags=["attachments"])
+
+
+def _content_disposition_header(filename: str) -> str:
+    """Same quoting Starlette's FileResponse uses internally - a client-supplied
+    filename (display-only, never used to build a filesystem path - see
+    attachment_service.py) must not be interpolated into a header unescaped."""
+    quoted = quote(filename)
+    if quoted != filename:
+        return f"attachment; filename*=utf-8''{quoted}"
+    return f'attachment; filename="{filename}"'
 
 
 @router.post("/conversations/{conversation_id}/attachments", response_model=ChatMessageOut)
@@ -59,7 +71,7 @@ def download_attachment(
     attachment_id: int,
     current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),  # noqa: B008
-) -> FileResponse:
+) -> StreamingResponse:
     attachment = db.get(Attachment, attachment_id)
     if attachment is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
@@ -75,8 +87,11 @@ def download_attachment(
     if not path.exists():
         raise HTTPException(status_code=404, detail="Attachment file is missing on disk")
 
-    return FileResponse(
-        path,
+    # Streamed (not FileResponse) because the bytes on disk are encrypted (see
+    # attachment_service.save_attachment) - they must be decrypted on the way out,
+    # not served as-is.
+    return StreamingResponse(
+        attachment_service.stream_decrypted_attachment(path),
         media_type=attachment.content_type or "application/octet-stream",
-        filename=attachment.original_filename,
+        headers={"content-disposition": _content_disposition_header(attachment.original_filename)},
     )

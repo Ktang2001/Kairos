@@ -7,7 +7,7 @@ from tests.server.conftest import auth_headers
 
 def _start_direct_conversation(client: TestClient, alice, other) -> dict:
     return client.post(
-        "/conversations/direct", json={"other_user_id": other.id}, headers=auth_headers(alice.id)
+        "/conversations/direct", json={"other_user_id": other.id}, headers=auth_headers(alice.token)
     ).json()
 
 
@@ -16,11 +16,11 @@ def test_websocket_receives_broadcast_on_new_message(client: TestClient, make_us
     bob = make_user("Bob", "bob@example.com")
     conversation = _start_direct_conversation(client, alice, bob)
 
-    with client.websocket_connect(f"/ws/chat?user_id={alice.id}") as alice_ws:
+    with client.websocket_connect(f"/ws/chat?token={alice.token}") as alice_ws:
         response = client.post(
             f"/conversations/{conversation['id']}/messages",
             json={"body": "hi alice"},
-            headers=auth_headers(bob.id),
+            headers=auth_headers(bob.token),
         )
         assert response.status_code == 200
 
@@ -40,16 +40,16 @@ def test_non_participant_does_not_receive_other_conversations_messages(
     private_conversation = _start_direct_conversation(client, alice, bob)
     mallory_conversation = _start_direct_conversation(client, alice, mallory)
 
-    with client.websocket_connect(f"/ws/chat?user_id={mallory.id}") as mallory_ws:
+    with client.websocket_connect(f"/ws/chat?token={mallory.token}") as mallory_ws:
         client.post(
             f"/conversations/{private_conversation['id']}/messages",
             json={"body": "not for mallory"},
-            headers=auth_headers(alice.id),
+            headers=auth_headers(alice.token),
         )
         client.post(
             f"/conversations/{mallory_conversation['id']}/messages",
             json={"body": "for mallory"},
-            headers=auth_headers(alice.id),
+            headers=auth_headers(alice.token),
         )
 
         # If the private-conversation broadcast had leaked to mallory, it would be
@@ -59,10 +59,10 @@ def test_non_participant_does_not_receive_other_conversations_messages(
         assert event["message"]["body"] == "for mallory"
 
 
-def test_websocket_rejects_unknown_user_id(client: TestClient) -> None:
+def test_websocket_rejects_unknown_token(client: TestClient) -> None:
     with (
         pytest.raises(WebSocketDisconnect) as exc_info,
-        client.websocket_connect("/ws/chat?user_id=999999"),
+        client.websocket_connect("/ws/chat?token=not-a-real-token"),
     ):
         pass
     assert exc_info.value.code == 4401

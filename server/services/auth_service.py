@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import time
 
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,28 @@ from server.models.user import User
 _PBKDF2_ITERATIONS = 200_000
 _MIN_PASSWORD_LENGTH = 8
 DEFAULT_SIGNUP_ROLE = "member"
+
+_MAX_FAILED_ATTEMPTS = 5
+_COOLDOWN_SECONDS = 30.0
+# In-memory only (per-process) - resets on server restart, which is an acceptable
+# tradeoff at this app's two-person LAN scale. Keyed by lowercased email.
+_failed_login_attempts: dict[str, list[float]] = {}
+
+
+def _is_cooling_down(email: str) -> bool:
+    """True if `email` has hit _MAX_FAILED_ATTEMPTS within the last _COOLDOWN_SECONDS."""
+    now = time.monotonic()
+    attempts = [t for t in _failed_login_attempts.get(email, []) if now - t < _COOLDOWN_SECONDS]
+    _failed_login_attempts[email] = attempts
+    return len(attempts) >= _MAX_FAILED_ATTEMPTS
+
+
+def _record_failed_attempt(email: str) -> None:
+    _failed_login_attempts.setdefault(email, []).append(time.monotonic())
+
+
+def _clear_failed_attempts(email: str) -> None:
+    _failed_login_attempts.pop(email, None)
 
 
 def hash_password(password: str) -> str:
@@ -65,8 +88,21 @@ def create_user(db: Session, name: str, email: str, password: str) -> User:
     return user
 
 
+class TooManyAttemptsError(Exception):
+    """Raised when an email has failed login too many times recently."""
+
+
 def authenticate(db: Session, email: str, password: str) -> User | None:
-    user = db.query(User).filter_by(email=email.strip().lower()).first()
+    email = email.strip().lower()
+    if _is_cooling_down(email):
+        raise TooManyAttemptsError(
+            f"too many failed attempts - try again in {int(_COOLDOWN_SECONDS)} seconds"
+        )
+
+    user = db.query(User).filter_by(email=email).first()
     if user is None or not verify_password(password, user.password_hash):
+        _record_failed_attempt(email)
         return None
+
+    _clear_failed_attempts(email)
     return user

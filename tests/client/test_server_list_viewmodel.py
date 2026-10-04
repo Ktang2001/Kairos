@@ -56,3 +56,23 @@ def test_remove_server_clears_last_used(tmp_path) -> None:
 
     assert vm.list_servers() == []
     assert vm.get_last_used_id() is None
+
+
+def test_base_url_uses_https(tmp_path) -> None:
+    vm = _isolated_viewmodel(tmp_path)
+    server = vm.add_server(host="10.0.0.5", port=8000)
+
+    assert server.base_url == "https://10.0.0.5:8000"
+
+
+def test_update_cert_pem_persists(tmp_path) -> None:
+    vm = _isolated_viewmodel(tmp_path)
+    server = vm.add_server(host="10.0.0.5", port=8000)
+    assert server.cert_pem is None
+
+    vm.update_cert_pem(server.id, "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----")
+
+    reloaded = _isolated_viewmodel(tmp_path)
+    assert reloaded.list_servers()[0].cert_pem == (
+        "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----"
+    )
