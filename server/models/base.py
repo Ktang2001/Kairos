@@ -1,3 +1,5 @@
+"""The base class every database model inherits from (see server/models/)."""
+
 from sqlalchemy.orm import DeclarativeBase
 
 

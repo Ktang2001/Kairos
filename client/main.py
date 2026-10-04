@@ -1,96 +1,41 @@
-import socket
+"""The desktop client's entry point (``python -m client.main``).
+
+Opens the connect window (choose or discover a server, sign in), which opens
+the main app window once signed in.
+"""
+
 import sys
+from pathlib import Path
 
-import httpx
-from PySide6.QtWidgets import (
-    QApplication,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QPushButton,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication
 
-from client.api_client import ApiClient
-from client.api_client.client import DEFAULT_BASE_URL
+from client.main_thread_gc import MainThreadGarbageCollector
+from client.theme import ThemeManager
+from client.views.connect_window import ConnectWindow
 
-
-class MainWindow(QMainWindow):
-    def __init__(self) -> None:
-        super().__init__()
-        self.setWindowTitle("Kairos")
-
-        self.api_client: ApiClient | None = None
-
-        self.host_input = QLineEdit(DEFAULT_BASE_URL)
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.clicked.connect(self._on_connect_clicked)
-        self.status_label = QLabel("Not connected")
-
-        self.message_input = QLineEdit()
-        self.send_button = QPushButton("Send")
-        self.send_button.setEnabled(False)
-        self.send_button.clicked.connect(self._on_send_clicked)
-
-        self.log = QTextEdit(readOnly=True)
-
-        host_row = QHBoxLayout()
-        host_row.addWidget(self.host_input)
-        host_row.addWidget(self.connect_button)
-
-        message_row = QHBoxLayout()
-        message_row.addWidget(self.message_input)
-        message_row.addWidget(self.send_button)
-
-        layout = QVBoxLayout()
-        layout.addLayout(host_row)
-        layout.addWidget(self.status_label)
-        layout.addLayout(message_row)
-        layout.addWidget(self.log)
-
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-    def _on_connect_clicked(self) -> None:
-        base_url = self.host_input.text().strip()
-        client = ApiClient(base_url=base_url)
-        try:
-            client.health()
-        except httpx.HTTPError as exc:
-            self.api_client = None
-            self.send_button.setEnabled(False)
-            self.status_label.setText(f"Connection failed: {exc}")
-            return
-
-        self.api_client = client
-        self.send_button.setEnabled(True)
-        self.status_label.setText(f"Connected to {base_url}")
-
-    def _on_send_clicked(self) -> None:
-        if self.api_client is None:
-            return
-
-        content = self.message_input.text().strip()
-        if not content:
-            return
-
-        try:
-            self.api_client.send_message(sender=socket.gethostname(), content=content)
-        except httpx.HTTPError as exc:
-            self.log.append(f"Send failed: {exc}")
-            return
-
-        self.log.append(f"You: {content}")
-        self.message_input.clear()
+ICON_PATH = Path(__file__).resolve().parent / "resources" / "kairos.svg"
+DESKTOP_FILE_ID = "kairos-client"
 
 
 def main() -> None:
+    """Start the app: main-thread garbage collection first, then the connect window."""
     app = QApplication(sys.argv)
-    window = MainWindow()
+    # MERGE-CRITICAL: create this right after QApplication and before any
+    # window. If lost: the app crashes now and then with an access violation
+    # (Python's garbage collector destroying Qt objects on a background thread).
+    # See client/main_thread_gc.py. Guarded by: tests/client/test_rare_paths.py.
+    _collector = MainThreadGarbageCollector(app)
+    app.setWindowIcon(QIcon(str(ICON_PATH)))
+    # setWindowIcon() alone only covers the title bar - Wayland taskbars look up
+    # the icon via the window's app_id matching an installed .desktop file's
+    # Icon= entry instead (see scripts/install_linux_desktop_entries.py).
+    app.setDesktopFileName(DESKTOP_FILE_ID)
+
+    theme_manager = ThemeManager()
+    theme_manager.apply()
+
+    window = ConnectWindow(theme_manager=theme_manager)
     window.show()
     sys.exit(app.exec())
 

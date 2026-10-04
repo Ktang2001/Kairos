@@ -10,10 +10,19 @@ dist/
 # Env / secrets
 .env
 .env.*
+# TLS cert/key and at-rest encryption key: per-server secrets, generated on
+# each host the first time it runs. Never shared.
+server/db/kairos.key
+server/db/tls/
 
-# Database
+# Database, its backups, and uploaded files: each host's own data
 server/db/kairos.db
+server/db/*.bak-*
+server/db/uploads/
 *.db
+# SQLite WAL-mode companions of a live database (see server/db/session.py)
+*.db-wal
+*.db-shm
 *.sqlite3
 
 # Editors / OS
@@ -22,6 +31,8 @@ server/db/kairos.db
 .claude/
 .DS_Store
 
-# Test / lint caches
+# Test / lint caches and coverage output
 .pytest_cache/
 .ruff_cache/
+.coverage
+htmlcov/
