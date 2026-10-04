@@ -9,6 +9,12 @@
   while the host can still use /docs for testing.
 * ``number_too_large``: an exception handler for ids beyond what SQLite can
   store (2**63 - 1), which otherwise crash that request with a 500.
+
+All three are switched on in ``server/main.py`` (``create_app``).
+
+MERGE-CRITICAL: an upload route (e.g. attachments) will need more than
+``MAX_BODY_BYTES``. Give that route its own larger limit; do not raise or
+remove this one for every route. Guarded by: tests/server/test_security.py.
 """
 
 from ipaddress import ip_address
@@ -38,6 +44,7 @@ class _BodyTooLarge(HTTPException):
 
 
 async def _send_json(send: Send, status_code: int, detail: str) -> None:
+    """Send a complete small JSON response straight from a middleware, and close the connection."""
     body = JSONResponse({"detail": detail}, status_code=status_code).body
     await send(
         {
@@ -66,6 +73,9 @@ class BodySizeLimitMiddleware:
         self.max_bytes = max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Check the declared size first, then count the bytes as they arrive; answer 413 once over
+        the limit.
+        """
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -85,6 +95,7 @@ class BodySizeLimitMiddleware:
         response_started = False
 
         async def counting_receive() -> Message:
+            """Hand each piece of the body on, raising once the running total is over the limit."""
             nonlocal received
             message = await receive()
             if message["type"] == "http.request":
@@ -94,6 +105,9 @@ class BodySizeLimitMiddleware:
             return message
 
         async def tracking_send(message: Message) -> None:
+            """Hand responses on, noting whether one has started (after that a 413 can no longer be
+            sent).
+            """
             nonlocal response_started
             if message["type"] == "http.response.start":
                 response_started = True
@@ -108,6 +122,7 @@ class BodySizeLimitMiddleware:
 
 
 def _is_loopback(host: str | None) -> bool:
+    """True if ``host`` is this computer (127.0.0.1, ::1 or "localhost")."""
     if host is None:
         return False
     try:
@@ -117,10 +132,15 @@ def _is_loopback(host: str | None) -> bool:
 
 
 class LocalOnlyDocsMiddleware:
+    """Answers /docs, /redoc and /openapi.json only for requests from this computer; everyone else
+    gets 404.
+    """
+
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Refuse the docs paths to other computers; pass every other request through."""
         if scope["type"] == "http" and scope["path"] in DOCS_PATHS:
             client = scope.get("client")
             if not _is_loopback(client[0] if client else None):
@@ -130,6 +150,7 @@ class LocalOnlyDocsMiddleware:
 
 
 async def number_too_large(_request: Request, _exc: OverflowError) -> JSONResponse:
+    """Turn an OverflowError (an id too big for SQLite) into a clean 422 instead of a 500."""
     return JSONResponse(
         {"detail": "A number in the request is too large"},
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

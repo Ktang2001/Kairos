@@ -1,5 +1,9 @@
 """Limits for test messages, shared so the client's message box can stop
 at the same length the server accepts.
+
+Used by both the server and the client (shared/ is imported by each), so a
+change here changes both at once -- keep it that way rather than copying
+these values into either side.
 """
 
 #: Long enough for a display name or hostname.

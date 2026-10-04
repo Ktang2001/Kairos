@@ -4,6 +4,10 @@ Strips invisible and control characters -- Unicode categories Cf (format:
 zero-width spaces, right-to-left overrides, ...) and Cc (control) -- which
 otherwise let two names that look identical on screen be different, or make
 text appear reversed. Ordinary letters, accents and emoji are kept.
+
+Used by both the server and the client (shared/ is imported by each), so a
+change here changes both at once -- keep it that way rather than copying
+these values into either side.
 """
 
 import unicodedata

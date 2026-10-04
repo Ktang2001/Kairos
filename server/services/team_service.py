@@ -68,6 +68,7 @@ class NewLeadNotAMember(TeamError):
 
 
 def is_admin(user: User) -> bool:
+    """True if the user has the app-wide admin role."""
     return user.role.name == ROLE_ADMIN
 
 
@@ -77,6 +78,7 @@ def can_manage(team: Team, user: User) -> bool:
 
 
 def _is_member(team: Team, user_id: int) -> bool:
+    """True if the user with this id is on the team."""
     return any(member.id == user_id for member in team.members)
 
 
@@ -98,10 +100,12 @@ def _team_query() -> Select[tuple[Team]]:
 
 
 def _load(db: OrmSession, team_id: int) -> Team | None:
+    """The team with its lead and members loaded, or None if there is no such team."""
     return db.scalar(_team_query().where(Team.id == team_id))
 
 
 def _reload(db: OrmSession, team_id: int) -> Team:
+    """Like ``_load``, for a team the caller has just written (so it must exist)."""
     team = _load(db, team_id)
     if team is None:  # pragma: no cover - the caller just committed this row
         raise TeamError(f"team {team_id} disappeared immediately after a write")
@@ -171,6 +175,9 @@ def get_managed_team(db: OrmSession, team_id: int, user: User) -> Team:
 
 
 def rename_team(db: OrmSession, team_id: int, actor: User, *, name: str) -> Team:
+    """Rename a team (its lead or an admin only). Raises TeamNameTaken if another team already uses
+    the name, ignoring case.
+    """
     team = get_managed_team(db, team_id, actor)
     if _name_taken(db, name, exclude_team_id=team.id):
         raise TeamNameTaken(name)

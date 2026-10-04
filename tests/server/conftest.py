@@ -6,6 +6,18 @@ bare ``TestClient(app)``, the ``get_db`` dependency resolves to the real
 ``server/db/kairos.db``, so merely running the suite would write rows into the
 database a teammate is using, and assertions such as "this is the only user"
 would depend on whatever previous runs happened to leave behind.
+
+Fixtures here, from the bottom up: ``engine`` (a temporary database file built
+from the models) -> ``session_factory`` -> ``seeded_roles`` (the three roles)
+-> ``client`` (a TestClient wired to that database) -> helpers that register
+people (``register``, ``make_account``) and the named cast used across the
+team tests: Lena the lead, Max a member, Ada an admin, Olga an outsider.
+
+MERGE-CRITICAL (whole file): when merging another branch's fixtures, add
+them here and keep these. Above all keep the ``get_db`` override in
+``client`` and ``configure_sqlite`` in ``engine``: without them the tests
+write into the real server/db/kairos.db and the concurrency tests lose the
+locking they check.
 """
 
 from collections.abc import Callable, Iterator

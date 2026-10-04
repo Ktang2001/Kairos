@@ -1,3 +1,5 @@
+"""The ``tasks`` table (unused for now, see below)."""
+
 from datetime import date, datetime
 
 from sqlalchemy import ForeignKey
@@ -8,6 +10,11 @@ from server.models.base import Base
 
 
 class Task(Base):
+    """A task inside a project, optionally assigned to a user. Not used by the API yet: projects,
+    tasks and subtasks (context.md goals 4-7) were taken out of the app for now. The table stays so
+    the database matches the migrations.
+    """
+
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)

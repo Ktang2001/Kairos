@@ -1,3 +1,17 @@
+"""Every request the desktop client makes to the Kairos server.
+
+One ``ApiClient`` per signed-in user. Each method is one API route; they all go through
+``_request``, which adds the sign-in token, turns every failure into an ``ApiError`` with a message
+fit to show, and tells the app whether the host is reachable (the offline banner) or the session has
+ended (back to login).
+
+MERGE-CRITICAL: new methods (chat, conversations, people...) must call ``self._request(...)`` like
+the ones below, not ``httpx`` directly. Calling httpx directly skips the token, the error messages,
+the offline banner and the session-expired handling. They must also not send a user id header (e.g.
+``X-Kairos-User-Id``) instead of the token: the server must not trust a client to say who it is.
+Guarded by: tests/client/test_api_client.py and test_app_robustness.py.
+"""
+
 import os
 from collections.abc import Callable
 from typing import Any
@@ -53,16 +67,21 @@ def normalise_base_url(text: str) -> str:
         url = None
     if url is None or url.scheme not in ("http", "https") or not url.host or " " in candidate:
         raise ApiError(f"{text.strip()!r} is not a valid server address.")
+    # MERGE-CRITICAL: keep this rewrite. Without it every request on Windows
+    # waits ~2 s for an IPv6 attempt first -- slow enough that people pressed
+    # Send twice. Guarded by: tests/client/test_api_client.py.
     if url.host == "localhost":
         candidate = str(url.copy_with(host="127.0.0.1")).rstrip("/")
     return candidate
 
 
 def _unreachable_message(base_url: str) -> str:
+    """The message for a host that refused or never answered the connection."""
     return f"Can't reach the server at {base_url}. Is it running, and is the address right?"
 
 
 def _timeout_message(base_url: str) -> str:
+    """The message for a host that connected but took longer than the timeout to reply."""
     return f"The server at {base_url} took too long to answer."
 
 
@@ -132,6 +151,10 @@ class ApiClient:
         self.on_session_expired: Callable[[], None] | None = None
 
     def _request(self, method: str, path: str, *, json: dict | None = None) -> Any:
+        """Send one request with the token, and return the decoded JSON reply (None if empty).
+        Raises ApiError on any failure, after reporting reachability and session expiry through the
+        hooks.
+        """
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
         try:
             response = httpx.request(
@@ -161,10 +184,12 @@ class ApiClient:
         raise ApiError(_error_message(response), response.status_code)
 
     def _notify_connection(self, reachable: bool) -> None:
+        """Tell the app whether the host answered (feeds the offline banner)."""
         if self.on_connection_changed is not None:
             self.on_connection_changed(reachable)
 
     def health(self) -> dict:
+        """Ask the server if it is up; returns {"status": "ok"}."""
         return self._request("GET", "/health")
 
     def login(self, email: str, password: str) -> dict:
@@ -200,6 +225,7 @@ class ApiClient:
             self.token = None
 
     def me(self) -> dict:
+        """The signed-in user as the server knows them now (their role may have changed)."""
         return self._request("GET", "/auth/me")
 
     def send_message(self, content: str) -> dict:
@@ -228,15 +254,19 @@ class ApiClient:
         return self._request("GET", f"/teams/{team_id}")
 
     def create_team(self, name: str) -> dict:
+        """Create a team; you become its lead. Admins and project leads only."""
         return self._request("POST", "/teams", json={"name": name})
 
     def rename_team(self, team_id: int, name: str) -> dict:
+        """Rename a team (its lead or an admin)."""
         return self._request("PATCH", f"/teams/{team_id}", json={"name": name})
 
     def delete_team(self, team_id: int) -> None:
+        """Delete a team (its lead or an admin)."""
         self._request("DELETE", f"/teams/{team_id}")
 
     def add_member(self, team_id: int, email: str) -> dict:
+        """Add someone to a team by their email."""
         return self._request("POST", f"/teams/{team_id}/members", json={"email": email})
 
     def remove_member(self, team_id: int, user_id: int) -> None:
@@ -244,14 +274,17 @@ class ApiClient:
         self._request("DELETE", f"/teams/{team_id}/members/{user_id}")
 
     def change_lead(self, team_id: int, user_id: int) -> dict:
+        """Make another member the team's lead."""
         return self._request("PUT", f"/teams/{team_id}/lead", json={"user_id": user_id})
 
     # ------------------------------------------------------- users (admin)
 
     def list_users(self) -> list[dict]:
+        """Every account with its role (admins only)."""
         return self._request("GET", "/users")
 
     def set_role(self, user_id: int, role: str) -> dict:
+        """Change someone's role (admins only, never your own)."""
         return self._request("PUT", f"/users/{user_id}/role", json={"role": role})
 
     # ------------------------------------------------------- attachments

@@ -32,6 +32,7 @@ class Session:
 
 
 def _check_email(email: str) -> str | None:
+    """A message if the email is missing or malformed, else None."""
     if not email:
         return "Enter your email."
     if len(email) > MAX_EMAIL_LENGTH or not EMAIL_PATTERN.match(email):
@@ -73,6 +74,10 @@ def validate_registration(name: str, email: str, password: str, confirm: str) ->
 
 
 class LoginViewModel(QObject):
+    """Checks the sign-in and create-account forms and sends them to the server. Emits ``signed_in``
+    with a ``Session`` on success.
+    """
+
     #: True while a request is in flight; the view locks the form.
     busy_changed = Signal(bool)
     #: The message to show, or "" to clear it.
@@ -93,12 +98,15 @@ class LoginViewModel(QObject):
 
     @property
     def busy(self) -> bool:
+        """True while a sign-in or sign-up request is in flight."""
         return self._busy
 
     def clear_error(self) -> None:
+        """Hide the error line."""
         self.error_changed.emit("")
 
     def sign_in(self, server: str, email: str, password: str) -> None:
+        """Check the sign-in form, then sign in on a background thread."""
         problem = validate_sign_in(email, password)
         email = email.strip()
         self._submit(server, problem, lambda client: client.login(email, password))
@@ -106,11 +114,15 @@ class LoginViewModel(QObject):
     def create_account(
         self, server: str, name: str, email: str, password: str, confirm: str
     ) -> None:
+        """Check the create-account form, then register on a background thread."""
         problem = validate_registration(name, email, password, confirm)
         name, email = name.strip(), email.strip()
         self._submit(server, problem, lambda client: client.register(name, email, password))
 
     def _submit(self, server: str, problem: str | None, call: Callable[[ApiClient], dict]) -> None:
+        """Shared by sign-in and sign-up: build a client for ``server``, report a form problem, or
+        send ``call`` in the background.
+        """
         # A second click (or Enter) while the first request is still running
         # is ignored rather than sent again.
         if self._busy:
@@ -134,13 +146,16 @@ class LoginViewModel(QObject):
         )
 
     def _succeeded(self, session: Session) -> None:
+        """The server accepted the user: hand the new session to the window."""
         self._set_busy(False)
         self.signed_in.emit(session)
 
     def _failed(self, message: str) -> None:
+        """The request failed: unlock the form and show why."""
         self._set_busy(False)
         self.error_changed.emit(message)
 
     def _set_busy(self, busy: bool) -> None:
+        """Record whether a request is in flight and tell the view."""
         self._busy = busy
         self.busy_changed.emit(busy)

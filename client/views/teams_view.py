@@ -33,6 +33,7 @@ USER_ID_ROLE = Qt.ItemDataRole.UserRole
 
 
 def ask_yes_no(parent: QWidget, title: str, question: str) -> bool:
+    """A Yes/No dialog, defaulting to No. Returns True for Yes."""
     answer = QMessageBox.question(
         parent,
         title,
@@ -44,6 +45,10 @@ def ask_yes_no(parent: QWidget, title: str, question: str) -> bool:
 
 
 class TeamsView(QWidget):
+    """The Teams tab: your teams on the left, the selected team on the right. Display only;
+    TeamsViewModel holds the logic.
+    """
+
     def __init__(self, viewmodel: TeamsViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.viewmodel = viewmodel
@@ -179,6 +184,7 @@ class TeamsView(QWidget):
     # --------------------------------------------------------------- render
 
     def _show_teams(self, teams: list[dict]) -> None:
+        """Refill the team list, keeping the selected team selected."""
         self._filling = True  # repopulating must not count as the user clicking
         try:
             self.teams_list.clear()
@@ -194,6 +200,7 @@ class TeamsView(QWidget):
         self._apply_permissions()
 
     def _show_team(self, team: dict | None) -> None:
+        """Show one team's lead and members, or the empty message when none is selected."""
         me = self.viewmodel.me
         self.detail_panel.setVisible(team is not None)
         self.empty_label.setVisible(team is None)
@@ -266,6 +273,7 @@ class TeamsView(QWidget):
         self.make_lead_button.setEnabled(usable)
 
     def _set_busy(self, busy: bool) -> None:
+        """Disable the buttons and list while a request is in flight."""
         for button in self._buttons:
             button.setEnabled(not busy)
         self.teams_list.setEnabled(not busy)
@@ -274,33 +282,40 @@ class TeamsView(QWidget):
     # -------------------------------------------------------------- actions
 
     def _selected_member_id(self) -> int | None:
+        """The id of the member selected in the list, or None."""
         item = self.members_list.currentItem()
         return item.data(USER_ID_ROLE) if item else None
 
     def _selected_member_name(self) -> str:
+        """The name of the selected member, for confirmation questions."""
         item = self.members_list.currentItem()
         return item.text().split(" - ")[0] if item else ""
 
     def _on_team_clicked(self, current: QListWidgetItem | None, _previous) -> None:
+        """The user picked a team in the list (ignored while the list is being refilled)."""
         if self._filling:
             return
         self.viewmodel.select_team(current.data(USER_ID_ROLE) if current else None)
 
     def _create(self) -> None:
+        """Create a team from the name box; clear the box once it is accepted."""
         name = self.new_team_input.text()
         self.viewmodel.create_team(name)
         if self.viewmodel.busy:  # accepted and on its way
             self.new_team_input.clear()
 
     def _rename(self) -> None:
+        """Rename the selected team to what is in the rename box."""
         self.viewmodel.rename_team(self.rename_input.text())
 
     def _add_member(self) -> None:
+        """Add the email in the box; clear the box once it is accepted."""
         self.viewmodel.add_member(self.add_member_input.text())
         if self.viewmodel.busy:
             self.add_member_input.clear()
 
     def _remove_member(self) -> None:
+        """After confirming, remove the selected member."""
         user_id = self._selected_member_id()
         team = self.viewmodel.team
         if user_id is None or team is None:
@@ -311,6 +326,7 @@ class TeamsView(QWidget):
             self.viewmodel.remove_member(user_id)
 
     def _make_lead(self) -> None:
+        """After confirming, make the selected member the lead."""
         user_id = self._selected_member_id()
         team = self.viewmodel.team
         if user_id is None or team is None:
@@ -323,11 +339,13 @@ class TeamsView(QWidget):
             self.viewmodel.make_lead(user_id)
 
     def _delete(self) -> None:
+        """After confirming, delete the selected team."""
         team = self.viewmodel.team
         if team and self.confirm("Delete team", f"Delete {team['name']}? This can't be undone."):
             self.viewmodel.delete_team()
 
     def _leave(self) -> None:
+        """After confirming, leave the selected team."""
         team = self.viewmodel.team
         if team and self.confirm("Leave team", f"Leave {team['name']}?"):
             self.viewmodel.leave_team()
@@ -337,6 +355,7 @@ class TeamsView(QWidget):
     connection_errors_shown_elsewhere = False
 
     def _show_error(self, message: str) -> None:
+        """Show an error, unless it is a connection error the offline banner already shows."""
         if self.connection_errors_shown_elsewhere and is_connection_error(message):
             message = ""
         self.error_label.show_message(message)

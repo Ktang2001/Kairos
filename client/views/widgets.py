@@ -13,6 +13,7 @@ ERROR_RED_ON_DARK = "#ff6b6b"
 
 
 def is_dark(widget: QWidget) -> bool:
+    """True if the widget's theme has a dark background."""
     return widget.palette().color(QPalette.ColorRole.Window).lightness() < 128
 
 
@@ -25,7 +26,9 @@ class ErrorLabel(QLabel):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._colour: str | None = None
-        # Messages can quote what the user or server sent; never render HTML.
+        # MERGE-CRITICAL: plain text. Messages can quote what the user or
+        # server sent; never render HTML. Guarded by:
+        # tests/client/test_plain_text_display.py.
         self.setTextFormat(Qt.TextFormat.PlainText)
         self.setWordWrap(True)
         self.setVisible(False)
@@ -37,11 +40,13 @@ class ErrorLabel(QLabel):
         self.setVisible(bool(message))
 
     def changeEvent(self, event: QEvent) -> None:
+        """Re-pick the red when the theme (palette) changes."""
         if event.type() == QEvent.Type.PaletteChange:
             self._apply_colour()
         super().changeEvent(event)
 
     def _apply_colour(self) -> None:
+        """Use the red that is readable on the current background."""
         colour = ERROR_RED_ON_DARK if is_dark(self) else ERROR_RED_ON_LIGHT
         # setStyleSheet itself sends a PaletteChange event, which calls this
         # again: only restyle when the colour really changes, or it recurses
@@ -69,18 +74,22 @@ class ElidedLabel(QLabel):
 
     @property
     def full_text(self) -> str:
+        """The whole text, before any shortening."""
         return self._full_text
 
     def set_full_text(self, text: str) -> None:
+        """Set the text (also shown in full as the tooltip)."""
         self._full_text = text
         self.setToolTip(text)
         self._elide()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
+        """Re-shorten the text to the new width."""
         super().resizeEvent(event)
         self._elide()
 
     def _elide(self) -> None:
+        """Show as much of the text as fits, ending in an ellipsis."""
         self.setText(
             self.fontMetrics().elidedText(
                 self._full_text, Qt.TextElideMode.ElideRight, self.width()

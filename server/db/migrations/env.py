@@ -1,3 +1,16 @@
+"""Alembic's settings for running migrations (database schema changes).
+
+Run from the repo root: alembic -c server/db/alembic.ini upgrade head
+
+Each file in versions/ is one step; its ``down_revision`` names the step before it, so the steps
+form a single chain.
+
+MERGE-CRITICAL: after merging another branch's migrations the chain must still be single. Two files
+with the same ``down_revision`` make "upgrade head" fail with "Multiple head revisions". Fix it by
+pointing the newer file's ``down_revision`` at the other branch's last step (or with ``alembic merge
+heads``). Check with: alembic -c server/db/alembic.ini heads
+"""
+
 from logging.config import fileConfig
 
 from alembic import context
@@ -20,6 +33,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Write the migration SQL out instead of running it (``alembic upgrade --sql``)."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -32,6 +46,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Connect to the database and apply the migrations."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

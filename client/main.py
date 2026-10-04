@@ -1,3 +1,10 @@
+"""The desktop client's main window and entry point (``python -m client.main``).
+
+``MainWindow`` holds two screens in a stack: the login screen, then the home screen once signed in.
+It switches between them on sign-in, sign-out and session expiry, and signs out on the server when
+the window closes.
+"""
+
 import sys
 
 from PySide6.QtCore import Slot
@@ -44,6 +51,7 @@ class MainWindow(QMainWindow):
         self.login_viewmodel.signed_in.connect(self._show_home)
 
     def _show_home(self, session: Session) -> None:
+        """Signed in: build the home screen for this session, watch its connection, and show it."""
         self.session_events = SessionEvents(self)
         self.session_events.attach(session.client)
         self.session_events.expired.connect(self._on_session_expired)
@@ -70,6 +78,7 @@ class MainWindow(QMainWindow):
         self.login_view.show_message(SESSION_EXPIRED_MESSAGE)
 
     def _show_login(self) -> None:
+        """Back to the login screen: tear down the home screen and forget the session."""
         if self.session_events is not None and self.home_viewmodel is not None:
             self.session_events.detach(self.home_viewmodel.session.client)
             self.session_events.deleteLater()
@@ -98,8 +107,13 @@ class MainWindow(QMainWindow):
 
 
 def main() -> None:
+    """Start the app: main-thread garbage collection first, then the window."""
     app = QApplication(sys.argv)
-    # Before any background request can run: see client/main_thread_gc.py.
+    # MERGE-CRITICAL: create this right after QApplication and before any
+    # window, in whichever main() survives a merge (e.g. one that opens a
+    # different first window). If lost: the app crashes now and then with an
+    # access violation (garbage collected on a background thread). See
+    # client/main_thread_gc.py. Guarded by: tests/client/test_rare_paths.py.
     _collector = MainThreadGarbageCollector(app)
     window = MainWindow()
     window.show()

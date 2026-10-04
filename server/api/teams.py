@@ -56,6 +56,7 @@ def get_team(
     db: OrmSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> TeamOut:
+    """One team with its members. 404 unless the caller is on it or an admin."""
     try:
         team = team_service.get_visible_team(db, team_id, current_user)
     except KNOWN_ERRORS as exc:
@@ -70,6 +71,7 @@ def rename_team(
     db: OrmSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> TeamOut:
+    """Rename a team. Its lead or an admin only; names are unique ignoring case."""
     try:
         team = team_service.rename_team(db, team_id, current_user, name=payload.name)
     except KNOWN_ERRORS as exc:
@@ -83,6 +85,7 @@ def delete_team(
     db: OrmSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> Response:
+    """Delete a team. Its lead or an admin only; refused while it still has projects."""
     try:
         team_service.delete_team(db, team_id, current_user)
     except KNOWN_ERRORS as exc:

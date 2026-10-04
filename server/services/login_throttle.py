@@ -40,6 +40,10 @@ PRUNE_EVERY_SECONDS = 60
 
 @dataclass
 class _Counter:
+    """Failed attempts for one key (an email+address pair, or an address), and until when it is
+    locked.
+    """
+
     failures: int = 0
     locked_until: float = 0.0
     last_seen: float = 0.0
@@ -55,6 +59,10 @@ def lock_seconds(failures: int, threshold: int) -> float:
 
 
 class LoginThrottle:
+    """The in-memory lockout used by POST /auth/login (one per app, on ``app.state``). Safe to use
+    from several request threads at once.
+    """
+
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         # The clock is injectable so tests can move time forward instantly.
         self._clock = clock
@@ -79,6 +87,9 @@ class LoginThrottle:
         return math.ceil(wait) if wait > 0 else 0
 
     def record_failure(self, email: str, address: str) -> None:
+        """Count a wrong password against both the email+address pair and the address, locking
+        either once over its limit.
+        """
         now = self._clock()
         with self._lock:
             self._prune(now)
@@ -95,16 +106,19 @@ class LoginThrottle:
             self._pairs.pop(self._pair_key(email, address), None)
 
     def reset(self) -> None:
+        """Forget every counter (used by tests between runs)."""
         with self._lock:
             self._pairs.clear()
             self._addresses.clear()
 
     @staticmethod
     def _pair_key(email: str, address: str) -> tuple[str, str]:
+        """The counter key for an email from an address; the email is folded to lower case."""
         return (email.strip().lower(), address)
 
     @staticmethod
     def _bump(counter: _Counter, now: float, threshold: int) -> None:
+        """Add one failure and, if that crosses the threshold, set how long the key stays locked."""
         counter.failures += 1
         counter.last_seen = now
         wait = lock_seconds(counter.failures, threshold)
@@ -112,6 +126,7 @@ class LoginThrottle:
             counter.locked_until = now + wait
 
     def _prune(self, now: float) -> None:
+        """At most once a minute, drop counters that are old and no longer locked."""
         if now - self._last_prune < PRUNE_EVERY_SECONDS:
             return
         self._last_prune = now

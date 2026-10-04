@@ -3,6 +3,11 @@
 Kept separate from ``auth_service`` because it answers a different question.
 ``auth_service`` decides *who* a caller is at the moment they log in; this
 module decides whether the token they present afterwards is still good.
+
+MERGE-CRITICAL: only a SHA-256 hash of each token is stored
+(``hash_token``), never the token itself, so a copied database file cannot
+be used to sign in as anyone. Keep it that way in any merged code that
+creates or looks up sessions. Guarded by: tests/server/test_sessions.py.
 """
 
 import hashlib
@@ -58,6 +63,7 @@ def create_session(db: OrmSession, user: User) -> tuple[Session, str]:
 
 
 def _live_sessions(db: OrmSession, user_id: int):
+    """A query for this user's sessions that are neither revoked nor expired."""
     return select(Session).where(
         Session.user_id == user_id,
         Session.revoked_at.is_(None),

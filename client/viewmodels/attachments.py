@@ -12,6 +12,8 @@ from pathlib import Path
 
 
 class AttachmentKind(StrEnum):
+    """The three kinds offered by the Attach menu. The value is what the server will be sent."""
+
     FILE = "file"
     IMAGE = "image"
     AUDIO = "audio"
@@ -68,6 +70,7 @@ class PendingAttachment:
 
     @property
     def name(self) -> str:
+        """The file name without its folder, for display."""
         return self.path.name
 
     def describe(self) -> str:

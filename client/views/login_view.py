@@ -37,6 +37,7 @@ MAX_FORM_WIDTH = 520
 
 
 def _password_field() -> QLineEdit:
+    """A text box that hides what is typed."""
     field = QLineEdit()
     field.setEchoMode(QLineEdit.EchoMode.Password)
     return field
@@ -56,6 +57,7 @@ def _form(label_width: int, rows: list[tuple[str, QWidget]]) -> QFormLayout:
 
 
 def _link_button(text: str) -> QPushButton:
+    """A flat, link-style button (used to switch pages)."""
     button = QPushButton(text)
     button.setFlat(True)
     button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -63,6 +65,10 @@ def _link_button(text: str) -> QPushButton:
 
 
 class LoginView(QWidget):
+    """The sign-in and create-account pages. Display only; LoginViewModel checks and sends what is
+    typed.
+    """
+
     def __init__(
         self,
         viewmodel: LoginViewModel,
@@ -201,6 +207,7 @@ class LoginView(QWidget):
     # ------------------------------------------------------------ actions
 
     def showEvent(self, event: QShowEvent) -> None:
+        """On first showing, put the cursor in the first empty field."""
         super().showEvent(event)
         if not self._focused_once:
             self._focused_once = True
@@ -219,11 +226,13 @@ class LoginView(QWidget):
         self.password_input.setFocus()
 
     def submit_sign_in(self) -> None:
+        """Send the sign-in form to the view model."""
         self.viewmodel.sign_in(
             self.server_input.text(), self.email_input.text(), self.password_input.text()
         )
 
     def submit_registration(self) -> None:
+        """Send the create-account form to the view model."""
         self.viewmodel.create_account(
             self.server_input.text(),
             self.name_input.text(),
@@ -233,12 +242,14 @@ class LoginView(QWidget):
         )
 
     def _submit_current_page(self) -> None:
+        """Enter pressed: submit whichever page is showing."""
         if self.current_page == SIGN_IN_PAGE:
             self.submit_sign_in()
         else:
             self.submit_registration()
 
     def show_register_page(self) -> None:
+        """Switch to the create-account page, carrying the email across."""
         # Carry the email across so it is not typed twice.
         if not self.register_email_input.text():
             self.register_email_input.setText(self.email_input.text())
@@ -247,6 +258,7 @@ class LoginView(QWidget):
         self.name_input.setFocus()
 
     def show_sign_in_page(self) -> None:
+        """Switch to the sign-in page, carrying the email across."""
         if self.register_email_input.text():
             self.email_input.setText(self.register_email_input.text())
         self._show_page(SIGN_IN_PAGE)
@@ -267,6 +279,7 @@ class LoginView(QWidget):
         self.password_input.setFocus()
 
     def _show_page(self, index: int) -> None:
+        """Show one page and hide the other."""
         for i, page in enumerate(self._pages):
             page.setVisible(i == index)
         self.current_page = index
@@ -274,12 +287,14 @@ class LoginView(QWidget):
     # ----------------------------------------------------- viewmodel signals
 
     def _set_busy(self, busy: bool) -> None:
+        """Lock the form while a request is in flight and relabel the buttons."""
         for widget in self._inputs:
             widget.setEnabled(not busy)
         self.sign_in_button.setText("Signing in…" if busy else "Sign in")
         self.create_button.setText("Creating account…" if busy else "Create account")
 
     def _show_error(self, message: str) -> None:
+        """Show an error line (hidden when empty)."""
         self.error_label.show_message(message)
 
     def _clear_error_on_edit(self) -> None:
@@ -296,5 +311,6 @@ class LoginView(QWidget):
         self._clear_passwords()
 
     def _clear_passwords(self) -> None:
+        """Empty every password box, so none is left filled in."""
         for field in (self.password_input, self.register_password_input, self.confirm_input):
             field.clear()

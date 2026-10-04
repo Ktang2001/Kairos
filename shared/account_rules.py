@@ -8,6 +8,10 @@ without a round trip to whichever computer is hosting.
 The email check is deliberately permissive: it rejects obvious non-addresses
 (no ``@``, embedded spaces) rather than attempting RFC 5322, because no regex
 can prove an address is real; only delivering mail to it can.
+
+Used by both the server and the client (shared/ is imported by each), so a
+change here changes both at once -- keep it that way rather than copying
+these values into either side.
 """
 
 import re

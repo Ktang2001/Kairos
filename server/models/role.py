@@ -1,3 +1,7 @@
+"""The ``roles`` table: the three app-wide roles (see shared/roles.py). Rows are created at server
+start-up by ``auth_service.ensure_roles``.
+"""
+
 from sqlalchemy.orm import Mapped, mapped_column
 
 from server.models.base import Base

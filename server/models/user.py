@@ -1,3 +1,5 @@
+"""The ``users`` table: one row per account."""
+
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -5,6 +7,11 @@ from server.models.base import Base
 
 
 class User(Base):
+    """An account. ``email`` is unique and stored lower-case; ``password_hash`` is an scrypt hash
+    (see server/services/password_service.py), never the password; ``role`` is admin, project_lead
+    or member.
+    """
+
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)

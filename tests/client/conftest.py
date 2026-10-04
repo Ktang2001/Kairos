@@ -5,6 +5,15 @@ file, so these tests exercise the client against the actual API over real
 HTTP. It uses its own ``create_app()`` instance: the server tests set and
 clear ``dependency_overrides`` on the module-level ``app``, and sharing it
 would let them pull the database out from under this server mid-run.
+
+Also here: ``dead_server`` / ``silent_server`` (a host that is off / hung),
+``settings`` (remembered values in a temp file, never the real ones), and an
+automatic fixture that runs around every client test (see below).
+
+MERGE-CRITICAL (whole file): when merging another branch's fixtures (e.g. a
+stub discovery listener), add them here and keep these -- in particular the
+automatic ``background_work_stays_inside_its_test`` fixture. Without it, a
+request from one test lands in the next, and the suite crashes now and then.
 """
 
 import gc

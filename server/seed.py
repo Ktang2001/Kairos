@@ -51,6 +51,8 @@ NOT_MIGRATED_MESSAGE = (
 
 
 class SeedResult(NamedTuple):
+    """What ``seed`` did: the exit code, and whether this run created the account."""
+
     exit_code: int
     #: True only if this run created the account, i.e. ``password`` is now its
     #: password. Callers must not show a generated password otherwise.
@@ -106,6 +108,9 @@ def seed(*, email: str, password: str, name: str) -> SeedResult:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry point: read the options and KAIROS_ADMIN_PASSWORD, check the password,
+    then seed.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--email",

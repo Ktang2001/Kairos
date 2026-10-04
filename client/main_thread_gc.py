@@ -11,6 +11,10 @@ The usual fix for PySide/PyQt apps, used here: switch off automatic
 collection and collect from a timer on the main thread instead. Plain
 reference counting still frees almost everything immediately; only objects
 caught in reference cycles wait (at most ``INTERVAL_MS``) for the timer.
+
+MERGE-CRITICAL: client/main.py must create one of these before opening any
+window, and tests/client/conftest.py does the same for each test. Guarded
+by: tests/client/test_main_thread_gc.py.
 """
 
 import gc
@@ -35,6 +39,7 @@ class MainThreadGarbageCollector(QObject):
 
     @Slot()
     def collect_if_due(self) -> None:
+        """Called by the timer: collect if Python would have by now."""
         # The same trigger Python's automatic collection would have used.
         if gc.get_count()[0] > self._threshold:
             gc.collect()

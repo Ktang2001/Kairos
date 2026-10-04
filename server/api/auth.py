@@ -3,6 +3,21 @@
 Register, log in, log out, ask who you are, and one admin-only maintenance
 route. Everything the routes do beyond translating input and output lives in
 ``server.services``.
+
+How signing in works: ``/auth/login`` (or ``/auth/register``) checks the
+password and hands back a random **token**. The client sends it with every
+later request as ``Authorization: Bearer <token>``; ``server/api/deps.py``
+turns it back into the signed-in user. Only a hash of the token is stored.
+
+MERGE-CRITICAL (whole file): this is the token-based sign-in every other
+route relies on (via ``get_current_user``). Another branch's simpler
+``/auth/signup`` + ``/auth/login`` that return a user without a token, and
+identify callers by an ``X-Kairos-User-Id`` header, must not replace it:
+anyone could then act as anyone by changing one number. Merge new account
+features *into* this file instead. If a route is renamed, also update
+``NO_LOCK_PATHS`` in server/db/session.py and the client's
+client/api_client/client.py. Guarded by: tests/server/test_auth.py,
+test_sessions.py, test_security.py.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -26,6 +41,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _build_login_response(session: Session, token: str, user: User) -> LoginResponse:
+    """What register and login both answer: the token, when it expires, and
+    who signed in. The token appears here once and is never stored as-is.
+    """
     return LoginResponse(
         token=token,
         expires_at=session.expires_at,
@@ -81,6 +99,7 @@ def register(
 
 
 def _wait_in_words(seconds: int) -> str:
+    """Turn a lockout length into words for the error message ("2 minutes")."""
     if seconds < 60:
         return f"{seconds} second{'s' if seconds != 1 else ''}"
     minutes = -(-seconds // 60)  # round up: "1 minute" for 61s would undersell it
@@ -99,6 +118,8 @@ def login(
     ``server.services.login_throttle``). A locked attempt is answered with
     429 before the password is checked at all.
     """
+    # MERGE-CRITICAL: keep the lockout check before the password check. If
+    # lost: unlimited password guessing. Guarded by: tests/server/test_security.py.
     throttle = request.app.state.login_throttle
     address = request.client.host if request.client else "unknown"
 
@@ -123,8 +144,11 @@ def login(
         ) from None
 
     throttle.record_success(payload.email, address)
-    # The password check (slow) ran without the write lock; take it now for
-    # the quick session write. See server.db.session.begin_write.
+    # MERGE-CRITICAL: keep begin_write before create_session (also in
+    # register above). The password check (slow) ran without the write lock;
+    # take it now for the quick session write. If lost: simultaneous sign-ins
+    # fail with 500 "database is locked". See server.db.session.begin_write.
+    # Guarded by: tests/server/test_concurrency.py.
     user_id = user.id
     begin_write(db)
     user = db.get(User, user_id)

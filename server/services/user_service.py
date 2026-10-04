@@ -33,6 +33,9 @@ def list_users(db: OrmSession) -> list[User]:
 
 
 def set_role(db: OrmSession, actor: User, *, user_id: int, role_name: str) -> User:
+    """Change another user's role and return them. Raises CannotChangeOwnRole for your own account
+    and UserNotFound for an unknown id.
+    """
     if user_id == actor.id:
         raise CannotChangeOwnRole(user_id)
 

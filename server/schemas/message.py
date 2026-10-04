@@ -1,3 +1,5 @@
+"""Request and response shapes for the /messages routes."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field

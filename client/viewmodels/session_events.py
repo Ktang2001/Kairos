@@ -14,6 +14,10 @@ from client.api_client import ApiClient
 
 
 class SessionEvents(QObject):
+    """One per signed-in session, shared by every screen. Turns ApiClient's reachability and expiry
+    reports into Qt signals.
+    """
+
     #: True when the host answered, False when it could not be reached.
     #: Only emitted when the state *changes*, so the banner doesn't flicker.
     connection_changed = Signal(bool)
@@ -26,15 +30,18 @@ class SessionEvents(QObject):
         self._expired = False
 
     def attach(self, client: ApiClient) -> None:
+        """Start listening to this client's requests."""
         client.on_connection_changed = self._report_connection
         client.on_session_expired = self._report_expired
 
     def detach(self, client: ApiClient) -> None:
+        """Stop listening (on sign-out), so a late request can't reach a closed screen."""
         client.on_connection_changed = None
         client.on_session_expired = None
 
     @property
     def reachable(self) -> bool:
+        """Whether the last request reached the host."""
         return self._reachable
 
     # These run on whichever thread made the request. Emitting a signal from
@@ -42,17 +49,20 @@ class SessionEvents(QObject):
     # called later, on the main thread.
 
     def _report_connection(self, reachable: bool) -> None:
+        """From any thread: emit ``connection_changed`` only when reachability changes."""
         if reachable != self._reachable:
             self._reachable = reachable
             self._emit(self.connection_changed, reachable)
 
     def _report_expired(self) -> None:
+        """From any thread: emit ``expired`` once, however many requests are refused."""
         if not self._expired:  # several requests may fail at once; react once
             self._expired = True
             self._emit(self.expired)
 
     @staticmethod
     def _emit(signal, *args) -> None:
+        """Emit a signal, ignoring the error raised if the screen has already closed."""
         try:
             signal.emit(*args)
         except RuntimeError:  # the signed-in screen has already closed

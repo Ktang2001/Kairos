@@ -57,5 +57,6 @@ KNOWN_ERRORS: tuple[type[Exception], ...] = tuple(ERRORS)
 
 
 def http_error(exc: Exception) -> HTTPException:
+    """The HTTPException (status code and message) that ERRORS lists for this refusal."""
     status_code, detail = ERRORS[type(exc)]
     return HTTPException(status_code=status_code, detail=detail)

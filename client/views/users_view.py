@@ -30,6 +30,10 @@ NAME_COLUMN, EMAIL_COLUMN, ROLE_COLUMN = 0, 1, 2
 
 
 class UsersView(QWidget):
+    """The admin Users tab: a table of accounts with a role drop-down each. Display only;
+    UsersViewModel holds the logic.
+    """
+
     def __init__(self, viewmodel: UsersViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.viewmodel = viewmodel
@@ -78,9 +82,11 @@ class UsersView(QWidget):
         self.role_boxes: dict[int, QComboBox] = {}
 
     def role_box(self, user_id: int) -> QComboBox:
+        """The role drop-down on this user's row."""
         return self.role_boxes[user_id]
 
     def _show_users(self, users: list[dict]) -> None:
+        """Refill the table, one row per user; your own row's drop-down is disabled."""
         self.loading_label.setVisible(not self.viewmodel.loaded)
         self.table.setRowCount(len(users))
         self.role_boxes = {}
@@ -101,6 +107,7 @@ class UsersView(QWidget):
             self.role_boxes[user["id"]] = box
 
     def _role_picked(self, user_id: int, box: QComboBox) -> None:
+        """A drop-down changed: confirm, then save, or put it back."""
         user = next(u for u in self.viewmodel.users if u["id"] == user_id)
         new_role = box.currentData()
         if new_role == user["role"]:
@@ -115,6 +122,7 @@ class UsersView(QWidget):
             box.setCurrentIndex(ALL_ROLES.index(user["role"]))
 
     def _set_busy(self, busy: bool) -> None:
+        """Disable the drop-downs and Refresh while a request is in flight."""
         self.refresh_button.setEnabled(not busy)
         for user_id, box in self.role_boxes.items():
             box.setEnabled(not busy and user_id != self.viewmodel.my_id)
@@ -124,6 +132,7 @@ class UsersView(QWidget):
     connection_errors_shown_elsewhere = False
 
     def _show_error(self, message: str) -> None:
+        """Show an error, unless it is a connection error the offline banner already shows."""
         if self.connection_errors_shown_elsewhere and is_connection_error(message):
             message = ""
         self.error_label.show_message(message)

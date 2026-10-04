@@ -24,6 +24,11 @@ other thread was using it, and the app crashed with an access violation.
 
 (Connecting a worker's signal straight to a plain function or lambda would not
 be safe either: PySide6 can then run the function on the worker thread.)
+
+MERGE-CRITICAL (whole file): keep this design. Replacing it with a
+QRunnable/QThreadPool version (as older branches have) brings the random
+crashes back. New screens should call ``BackgroundRunner.run`` rather than
+start their own threads. Guarded by: tests/client/test_background.py.
 """
 
 import itertools
@@ -50,6 +55,7 @@ class _Dispatcher(QObject):
 
     @Slot(int, bool, object)
     def _deliver(self, job_id: int, succeeded: bool, value: Any) -> None:
+        """Main thread: run the waiting caller's success or error callback with the result."""
         job = _jobs.pop(job_id, None)
         if job is None:
             return
@@ -85,7 +91,9 @@ def _work(job_id: int, box: list) -> None:
         # An exception escaping a worker thread is printed and lost, leaving
         # the form stuck on "Signing in...". Report it like any failure.
         outcome = (False, f"Something went wrong: {exc}")
-    # ``_jobs`` still holds the call, so this is never the last reference.
+    # MERGE-CRITICAL: drop the worker's reference before reporting back.
+    # ``_jobs`` still holds the call, so this is never the last reference and
+    # nothing Qt-related is freed on this thread.
     del fn
     try:
         if _dispatcher is not None:
@@ -116,6 +124,9 @@ class BackgroundRunner(QObject):
         on_success: Callable[[Any], None],
         on_error: Callable[[str], None],
     ) -> None:
+        """Run ``fn`` on a background thread, then call ``on_success(result)`` or
+        ``on_error(message)`` on the main thread. Returns at once.
+        """
         job_id = next(_job_ids)
         _jobs[job_id] = (self, fn, on_success, on_error)
         # Daemon: a request still waiting on a dead host must not keep the

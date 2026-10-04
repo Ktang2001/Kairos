@@ -14,6 +14,18 @@ admins left). Three settings fix that:
 * WAL journal mode: reads never wait for a write in progress.
 * A 30 s busy timeout: a queued write waits instead of failing with
   "database is locked" after SQLite's default 5 s.
+
+MERGE-CRITICAL (whole file): every route must get its session from
+``get_db`` below, and the tests build their databases with
+``configure_sqlite``. If this file is replaced by a plain
+``SessionLocal()``/``get_db`` (as on older branches): simultaneous changes
+start failing with 500s and "database is locked", and two requests can break
+team/admin rules (a lead who isn't a member, no admins left).
+Guarded by: tests/server/test_concurrency.py.
+
+Other branches may add helpers here (e.g. a session factory for websockets):
+add them below, but keep ``configure_sqlite``, ``open_session``,
+``begin_write`` and this ``get_db``.
 """
 
 from collections.abc import Iterator
@@ -34,6 +46,9 @@ READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 #: Writes that must not hold the lock from the start: both spend ~0.1 s
 #: hashing a password, which would make every other write wait behind them.
 #: They call ``begin_write`` themselves once the slow part is done.
+#: MERGE-CRITICAL: must match the real sign-in/sign-up paths in
+#: server/api/auth.py. If a route is renamed (e.g. /auth/signup) and this is
+#: not, every sign-up holds the write lock while hashing and slows all others.
 NO_LOCK_PATHS = frozenset({"/auth/login", "/auth/register"})
 
 _BEGIN_MODE = "sqlite_begin_mode"
@@ -46,6 +61,9 @@ def configure_sqlite(engine: Engine) -> Engine:
 
     @event.listens_for(engine, "connect")
     def _on_connect(dbapi_connection, _record) -> None:
+        """Runs for each new database connection: hand transactions to SQLAlchemy, then switch on
+        WAL and the busy timeout.
+        """
         # Hand transaction control to SQLAlchemy (the "begin" hook below):
         # the sqlite3 driver's own automatic BEGIN can't be IMMEDIATE.
         dbapi_connection.isolation_level = None
@@ -56,6 +74,9 @@ def configure_sqlite(engine: Engine) -> Engine:
 
     @event.listens_for(engine, "begin")
     def _on_begin(connection) -> None:
+        """Runs at the start of each transaction: BEGIN IMMEDIATE for writes, BEGIN DEFERRED
+        otherwise.
+        """
         mode = connection.get_execution_options().get(_BEGIN_MODE, "DEFERRED")
         connection.exec_driver_sql(f"BEGIN {mode}")
 
@@ -63,6 +84,9 @@ def configure_sqlite(engine: Engine) -> Engine:
 
 
 def needs_write_lock(request: Request | None) -> bool:
+    """True for requests that change data (POST, PUT, PATCH, DELETE), apart
+    from sign-in/sign-up, which take the lock themselves after hashing.
+    """
     return (
         request is not None
         and request.method not in READ_ONLY_METHODS
@@ -99,12 +123,17 @@ def begin_write(db: Session) -> None:
     db.connection(execution_options={_BEGIN_MODE: "IMMEDIATE"})
 
 
+# The one engine for the real database file (server/db/config.py says where).
+# "check_same_thread": False lets FastAPI's worker threads share connections;
+# "timeout" is the driver-level twin of the busy timeout above.
 engine = configure_sqlite(
     create_engine(
         DATABASE_URL,
         connect_args={"check_same_thread": False, "timeout": BUSY_TIMEOUT_SECONDS},
     )
 )
+#: Makes a new session (one unit of work) on the real database. Tests point
+#: code at their own throwaway factory instead -- never at this one.
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

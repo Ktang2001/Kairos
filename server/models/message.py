@@ -1,3 +1,7 @@
+"""The ``messages`` table: short test messages sent from the client's Messages tab and shown in the
+server window.
+"""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, func

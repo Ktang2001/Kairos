@@ -8,6 +8,11 @@ The stored format is self-describing -- ``scrypt$n$r$p$<salt>$<hash>`` -- so the
 cost parameters can be raised later without invalidating existing passwords:
 verification always uses the parameters recorded next to the hash, not the
 current module constants.
+
+MERGE-CRITICAL (whole file): the only place passwords are hashed and
+checked. Every stored ``users.password_hash`` is in this format; a second
+hashing scheme elsewhere (e.g. PBKDF2 in auth_service) would make those
+accounts unable to sign in. Guarded by: tests/server/test_password_service.py.
 """
 
 import base64
@@ -49,14 +54,17 @@ MAX_PARSED_P = 16
 
 
 def _encode(raw: bytes) -> str:
+    """Bytes to base64 text, for storing in the hash string."""
     return base64.b64encode(raw).decode("ascii")
 
 
 def _decode(text: str) -> bytes:
+    """Base64 text back to bytes; raises on anything malformed."""
     return base64.b64decode(text.encode("ascii"), validate=True)
 
 
 def _derive(password: str, salt: bytes, n: int, r: int, p: int) -> bytes:
+    """Run scrypt with these settings and return the derived key."""
     return hashlib.scrypt(
         password.encode("utf-8"),
         salt=salt,

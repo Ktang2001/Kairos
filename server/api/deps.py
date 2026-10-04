@@ -7,6 +7,18 @@ matters because logging out has to revoke the session itself.
 The ``HTTPBearer`` security scheme is used instead of parsing the
 ``Authorization`` header by hand, so malformed headers are rejected consistently
 and the generated OpenAPI docs grow a working "Authorize" button.
+
+How a route uses this::
+
+    def my_route(current_user: User = Depends(get_current_user)): ...
+
+FastAPI then refuses the request with 401 unless it carries a live token.
+
+MERGE-CRITICAL (whole file): every protected route identifies the caller
+through ``get_current_user`` here. New routes from another branch (chat,
+conversations, people, attachments...) must use it too, instead of trusting a
+user id sent by the client (e.g. an ``X-Kairos-User-Id`` header), which
+anyone can forge. Guarded by: tests/server/test_authorization.py.
 """
 
 from collections.abc import Callable
@@ -28,6 +40,7 @@ bearer_scheme = HTTPBearer(auto_error=False, description="Token from POST /auth/
 
 
 def _unauthorized(detail: str) -> HTTPException:
+    """A 401 carrying the header that tells clients to sign in and send a bearer token."""
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=detail,
@@ -75,6 +88,7 @@ def require_role(*allowed_roles: str) -> Callable[[User], User]:
     """
 
     def dependency(current_user: User = Depends(get_current_user)) -> User:  # noqa: B008
+        """Let the request through only if the caller's role is one of ``allowed_roles``."""
         if current_user.role.name not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

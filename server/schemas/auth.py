@@ -1,8 +1,18 @@
 """Request and response shapes for the /auth routes.
 
+A "schema" is the exact shape a request body must have; FastAPI rejects
+anything else with 422 before the route runs, so routes never see bad input.
+
 Pydantic's ``EmailStr`` would need the ``email-validator`` package, which this
 project does not depend on, so the address check is a small regex from
 ``shared.account_rules`` (see there for why it is deliberately permissive).
+
+MERGE-CRITICAL: keep the limits and validators below (lengths, the email
+check, ``password_problem``, ``clean_display_text``, and *no* ``role`` field
+on RegisterRequest). A bare ``name: str; email: str; password: str`` version
+accepts megabyte-long names, "password123", invisible characters that let
+one name impersonate another, and lets the client choose its own role.
+Guarded by: tests/server/test_auth.py and test_security.py.
 """
 
 from datetime import datetime
@@ -59,6 +69,7 @@ class RegisterRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def email_must_look_like_an_address(cls, value: str) -> str:
+        """Reject anything that doesn't look like name@domain (the same rule the client checks)."""
         candidate = value.strip()
         if not EMAIL_PATTERN.match(candidate):
             raise ValueError("must be an email address")
@@ -67,6 +78,9 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def password_must_not_be_guessable(cls, value: str, info: ValidationInfo) -> str:
+        """Reject common passwords and ones containing the user's name or email (see
+        shared.account_rules).
+        """
         problem = password_problem(
             value, email=info.data.get("email", ""), name=info.data.get("name", "")
         )

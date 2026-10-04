@@ -12,6 +12,10 @@ from shared.roles import ROLE_DISPLAY_NAMES
 
 
 class HomeViewModel(QObject):
+    """State and actions for the home screen's header and Messages tab. The view shows what this
+    says through the signals below.
+    """
+
     #: A message was accepted by the server; carries the text that was sent.
     message_sent = Signal(str)
     #: True while a message is on its way; the view locks the message box.
@@ -47,18 +51,22 @@ class HomeViewModel(QObject):
 
     @property
     def server_url(self) -> str:
+        """The address of the server this session is signed in to."""
         return self.session.client.base_url
 
     @property
     def sending(self) -> bool:
+        """True while a message is on its way."""
         return self._sending
 
     @property
     def signing_out(self) -> bool:
+        """True once sign-out has started."""
         return self._signing_out
 
     @property
     def attachment(self) -> PendingAttachment | None:
+        """The file waiting to be sent with the next message, or None."""
         return self._attachment
 
     def attach(self, path: str, kind: AttachmentKind) -> None:
@@ -73,6 +81,7 @@ class HomeViewModel(QObject):
         self.attachment_changed.emit(attachment)
 
     def clear_attachment(self) -> None:
+        """Drop the waiting attachment (the chip's X button)."""
         if self._attachment is not None:
             self._attachment = None
             self.attachment_changed.emit(None)
@@ -84,6 +93,8 @@ class HomeViewModel(QObject):
         pressing Enter again during a slow send posted the same message twice.
         """
         content = text.strip()
+        # MERGE-CRITICAL: keep this guard. If lost, pressing Enter twice
+        # sends the message twice. Guarded by: tests/client/test_message_sending.py.
         if self._signing_out or self._sending:
             return
         if self._attachment is not None:
@@ -145,6 +156,9 @@ class HomeViewModel(QObject):
         self._sign_out_with(self.session.client.logout_everywhere)
 
     def _sign_out_with(self, call) -> None:
+        """Run ``call`` (logout or logout-everywhere) once, then emit ``signed_out`` whatever
+        happened.
+        """
         if self._signing_out:
             return
         self._signing_out = True
@@ -155,14 +169,17 @@ class HomeViewModel(QObject):
         )
 
     def _sent(self, content: str) -> None:
+        """The server accepted the message: unlock the box and log it."""
         self._set_sending(False)
         self.message_sent.emit(content)
 
     def _failed(self, content: str, message: str) -> None:
+        """The send failed: unlock the box, give the text back and show why."""
         self._set_sending(False)
         self.error_changed.emit(f"Send failed: {message}")
         self.send_failed.emit(content)
 
     def _set_sending(self, sending: bool) -> None:
+        """Record whether a send is in flight and tell the view."""
         self._sending = sending
         self.sending_changed.emit(sending)

@@ -2,6 +2,10 @@
 
 The backend stores roles as rows in the ``roles`` table; the client only needs
 the names, so they live here rather than in either package alone.
+
+MERGE-CRITICAL: these strings are stored in every database. Renaming one
+(e.g. "project_lead" to "lead") makes existing accounts' roles unknown;
+add a migration if a rename is ever really needed.
 """
 
 ROLE_ADMIN = "admin"

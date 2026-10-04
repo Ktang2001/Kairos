@@ -3,6 +3,18 @@
 Business rules live here rather than in the routes (context.md: the Qt client
 stays thin and all logic is server-side so both clients stay in sync). Routes
 translate the exceptions defined below into HTTP status codes.
+
+What is here: creating accounts (``register_user``), checking a password at
+sign-in (``authenticate``), looking users and roles up, and making sure the
+three roles exist (``ensure_roles``). Hashing itself is in password_service.
+
+MERGE-CRITICAL (whole file): passwords are hashed by
+``server/services/password_service.py`` (scrypt, stored as
+``scrypt$n$r$p$salt$hash``). Another branch's ``hash_password`` /
+``verify_password`` here (PBKDF2, stored as ``salt$digest``) must not replace
+these functions: the two formats can't read each other, so every existing
+account would stop being able to sign in. Guarded by: tests/server/test_auth.py
+and test_password_service.py.
 """
 
 from datetime import UTC, datetime
@@ -80,6 +92,7 @@ def ensure_roles(db: OrmSession) -> list[Role]:
 
 
 def get_role_by_name(db: OrmSession, role_name: str) -> Role | None:
+    """The role row with this name ("admin", "project_lead", "member"), or None."""
     return db.scalar(select(Role).where(Role.name == role_name))
 
 
@@ -156,6 +169,9 @@ def authenticate(db: OrmSession, *, email: str, password: str) -> User:
     """
     user = get_user_by_email(db, email)
 
+    # MERGE-CRITICAL: keep the dummy check for unknown emails. If lost, an
+    # unknown email answers faster than a wrong password, which tells an
+    # attacker which addresses have accounts.
     if user is None:
         password_service.verify_password(password, password_service.dummy_hash())
         raise InvalidCredentials(email)

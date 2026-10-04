@@ -65,6 +65,7 @@ class TeamOut(BaseModel):
 
 
 def to_team_summary(team: "Team") -> TeamSummary:
+    """Flatten an ORM ``Team`` into a list row: its lead and how many members."""
     return TeamSummary(
         id=team.id,
         name=team.name,
@@ -75,6 +76,7 @@ def to_team_summary(team: "Team") -> TeamSummary:
 
 
 def to_team_out(team: "Team") -> TeamOut:
+    """Flatten an ORM ``Team`` with its full member list for the client."""
     return TeamOut(
         id=team.id,
         name=team.name,

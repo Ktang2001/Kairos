@@ -54,6 +54,10 @@ AUTO_REFRESH_MS = 30_000
 
 
 class HomeView(QWidget):
+    """The signed-in screen: header, offline banner, and the Teams / Messages / Users tabs. Display
+    only; the view models hold the logic.
+    """
+
     def __init__(
         self,
         viewmodel: HomeViewModel,
@@ -148,8 +152,9 @@ class HomeView(QWidget):
 
         self.error_label = ErrorLabel()
 
-        # Plain text only, so message text is shown exactly as typed and can
-        # never be rendered as HTML.
+        # MERGE-CRITICAL: plain text only (QPlainTextEdit, not QTextEdit), so
+        # message text is shown exactly as typed and can never be rendered as
+        # HTML. Guarded by: tests/client/test_plain_text_display.py.
         self.log = QPlainTextEdit(readOnly=True)
 
         self.messages_tab = QWidget()
@@ -221,10 +226,12 @@ class HomeView(QWidget):
 
     @Slot(bool)
     def set_reachable(self, reachable: bool) -> None:
+        """Show the offline banner while the host can't be reached; hide it when it answers."""
         self.offline_banner.setVisible(not reachable)
 
     @property
     def offline(self) -> bool:
+        """True while the offline banner is showing."""
         return not self.offline_banner.isHidden()
 
     # -------------------------------------------------------------- role
@@ -238,6 +245,7 @@ class HomeView(QWidget):
             self.users_viewmodel.refresh()
 
     def _show_users_tab(self, show: bool) -> None:
+        """Add or remove the admin-only Users tab."""
         index = self.tabs.indexOf(self.users_view)
         if show and index == -1:
             self.tabs.addTab(self.users_view, "Users")
@@ -246,25 +254,30 @@ class HomeView(QWidget):
 
     @property
     def users_tab_visible(self) -> bool:
+        """True if the Users tab is currently shown."""
         return self.tabs.indexOf(self.users_view) != -1
 
     # ---------------------------------------------------------- messages
 
     def _send(self) -> None:
+        """Send what is in the message box."""
         self.viewmodel.send_message(self.message_input.text())
 
     def _open_file_dialog(self, kind: AttachmentKind) -> str:
+        """The real file picker for ``kind``; returns the chosen path or ``""``."""
         path, _filter = QFileDialog.getOpenFileName(
             self, f"Attach {kind.value}", "", KIND_FILTERS[kind]
         )
         return path
 
     def _choose_attachment(self, kind: AttachmentKind) -> None:
+        """Ask for a file of ``kind`` and hold it for the next send."""
         path = self.pick_file(kind)
         if path:  # "" means the user cancelled the dialog
             self.viewmodel.attach(path, kind)
 
     def _show_attachment(self, attachment: PendingAttachment | None) -> None:
+        """Show the waiting attachment's chip, or hide it when there is none."""
         self.attachment_row.setVisible(attachment is not None)
         self.attachment_label.set_full_text(attachment.describe() if attachment else "")
 
@@ -286,6 +299,7 @@ class HomeView(QWidget):
             self.message_input.setFocus()
 
     def _on_message_sent(self, content: str) -> None:
+        """Add a sent message to the log."""
         self.log.appendPlainText(f"You: {content}")
 
     def _give_text_back(self, content: str) -> None:
@@ -294,11 +308,13 @@ class HomeView(QWidget):
             self.message_input.setText(content)
 
     def _show_error(self, message: str) -> None:
+        """Show an error under the message box (hidden when empty)."""
         self.error_label.show_message(message)
 
     # ---------------------------------------------------------- sign out
 
     def _lock_for_sign_out(self, label: str, button: QPushButton) -> None:
+        """Disable everything while signing out and relabel the button pressed."""
         self.refresh_timer.stop()
         for widget in (
             self.sign_out_button,
@@ -312,10 +328,12 @@ class HomeView(QWidget):
         button.setText(label)
 
     def _sign_out(self) -> None:
+        """Sign out of this computer."""
         self._lock_for_sign_out("Signing out…", self.sign_out_button)
         self.viewmodel.sign_out()
 
     def _sign_out_everywhere(self) -> None:
+        """After confirming, sign out on every computer."""
         if not self.confirm(
             "Sign out everywhere",
             "Sign out on every computer where you're signed in, including this one?",

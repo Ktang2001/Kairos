@@ -23,6 +23,7 @@ MAX_TEAM_NAME_LENGTH = 100
 
 
 def team_name_problem(name: str) -> str | None:
+    """A message if the team name is blank or too long, else None. Matches the server's rule."""
     name = name.strip()
     if not name:
         return "Enter a team name."
@@ -32,6 +33,11 @@ def team_name_problem(name: str) -> str | None:
 
 
 class TeamsViewModel(QObject):
+    """State and actions for the Teams tab: your teams, the selected one, and the changes you may
+    make. Every action reloads everything afterwards, so the screen always shows what the server
+    has.
+    """
+
     #: Your account as the server sees it now: {"id", "name", "email", "role"}.
     me_changed = Signal(dict)
     #: The list of teams you can see (summaries).
@@ -63,10 +69,12 @@ class TeamsViewModel(QObject):
 
     @property
     def busy(self) -> bool:
+        """True while a request is in flight (the view disables its buttons)."""
         return self._busy
 
     @property
     def selected_id(self) -> int | None:
+        """The id of the team shown on the right, or None."""
         return self.team["id"] if self.team else None
 
     # ------------------------------------------------------------- actions
@@ -84,11 +92,13 @@ class TeamsViewModel(QObject):
         self._run(None)
 
     def select_team(self, team_id: int | None) -> None:
+        """Show a different team (loads its members)."""
         if team_id == self.selected_id:
             return
         self._run(None, select=team_id)
 
     def create_team(self, name: str) -> None:
+        """Create a team after checking the name; it becomes the selected team."""
         if problem := team_name_problem(name):
             self.error_changed.emit(problem)
             return
@@ -96,6 +106,7 @@ class TeamsViewModel(QObject):
         self._run(lambda client: client.create_team(name)["id"])
 
     def rename_team(self, name: str) -> None:
+        """Rename the selected team after checking the name."""
         if self.team is None:
             return
         if problem := team_name_problem(name):
@@ -105,12 +116,14 @@ class TeamsViewModel(QObject):
         self._run(lambda client: client.rename_team(team_id, name))
 
     def delete_team(self) -> None:
+        """Delete the selected team."""
         if self.team is None:
             return
         team_id = self.team["id"]
         self._run(lambda client: client.delete_team(team_id), select=None)
 
     def add_member(self, email: str) -> None:
+        """Add someone to the selected team by email, after checking it looks like one."""
         if self.team is None:
             return
         email = email.strip()
@@ -124,18 +137,21 @@ class TeamsViewModel(QObject):
         self._run(lambda client: client.add_member(team_id, email))
 
     def remove_member(self, user_id: int) -> None:
+        """Remove a member from the selected team."""
         if self.team is None:
             return
         team_id = self.team["id"]
         self._run(lambda client: client.remove_member(team_id, user_id))
 
     def make_lead(self, user_id: int) -> None:
+        """Hand the selected team's lead to another member."""
         if self.team is None:
             return
         team_id = self.team["id"]
         self._run(lambda client: client.change_lead(team_id, user_id))
 
     def leave_team(self) -> None:
+        """Remove yourself from the selected team."""
         if self.team is None:
             return
         team_id, my_id = self.team["id"], self.me["id"]
@@ -158,6 +174,7 @@ class TeamsViewModel(QObject):
         wanted = self.selected_id if select is self._KEEP else select
 
         def job() -> tuple[dict, list[dict], dict | None]:
+            """Runs on the background thread: the action (if any), then the fresh data."""
             chosen = wanted
             if action is not None:
                 result = action(client)
@@ -175,6 +192,7 @@ class TeamsViewModel(QObject):
         self._runner.run(job, on_success=self._loaded, on_error=self._failed)
 
     def _loaded(self, result: tuple[dict, list[dict], dict | None]) -> None:
+        """Main thread: store the fresh data and tell the view; run a refresh queued meanwhile."""
         me, teams, detail = result
         self.loaded = True
         self._set_busy(False)
@@ -189,15 +207,18 @@ class TeamsViewModel(QObject):
         self._run_queued_refresh()
 
     def _failed(self, message: str) -> None:
+        """Main thread: show why the request failed; run a refresh queued meanwhile."""
         self._set_busy(False)
         self.error_changed.emit(message)
         self._run_queued_refresh()
 
     def _run_queued_refresh(self) -> None:
+        """Run the one refresh asked for while busy, if any."""
         if self._refresh_again:
             self._refresh_again = False
             self.refresh()
 
     def _set_busy(self, busy: bool) -> None:
+        """Record whether a request is in flight and tell the view."""
         self._busy = busy
         self.busy_changed.emit(busy)
