@@ -16,7 +16,9 @@ class _FakeResponse:
 
 def test_accept_fetches_and_stores_display_name(qtbot, monkeypatch) -> None:
     monkeypatch.setattr(
-        httpx, "get", lambda url, timeout=5: _FakeResponse({"display_name": "Kairos Server"})
+        httpx,
+        "get",
+        lambda url, timeout=5, verify=None: _FakeResponse({"display_name": "Kairos Server"}),
     )
 
     dialog = AddServerDialog()
@@ -35,7 +37,7 @@ def test_accept_fetches_and_stores_display_name(qtbot, monkeypatch) -> None:
 
 
 def test_accept_shows_error_when_unreachable(qtbot, monkeypatch) -> None:
-    def _raise(url, timeout=5):
+    def _raise(url, timeout=5, verify=None):
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(httpx, "get", _raise)

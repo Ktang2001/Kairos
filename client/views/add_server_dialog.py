@@ -56,9 +56,13 @@ class AddServerDialog(QDialog):
             self.status_label.setText("Host is required.")
             return
 
-        base_url = f"http://{host}:{port}"
+        # https, and deliberately unverified: this probe runs before the server
+        # has ever been pinned (see client/net/cert_pinning.py), so there is no
+        # certificate to check against yet. Real trust is established afterward,
+        # when connect_window.py fetches and pins the leaf certificate.
+        base_url = f"https://{host}:{port}"
         try:
-            response = httpx.get(f"{base_url}/server/info", timeout=5)
+            response = httpx.get(f"{base_url}/server/info", timeout=5, verify=False)
             response.raise_for_status()
             info = response.json()
         except httpx.HTTPError as exc:
