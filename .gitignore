@@ -10,6 +10,9 @@ dist/
 # Env / secrets
 .env
 .env.*
+# Per-server keys, generated on each host the first time it runs (never shared)
+server/db/kairos.key
+server/db/tls/
 
 # Database
 server/db/kairos.db
