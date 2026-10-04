@@ -31,6 +31,16 @@ def send_message(
     return MessageOut.model_validate(message)
 
 
+# TODO(attachments): add the upload route here, e.g.
+#   @router.post("/messages/attachments", response_model=MessageOut)
+#   def send_attachment(file: UploadFile, kind: str = Form(...), content: str = Form(""),
+#                       db=Depends(get_db), current_user=Depends(get_current_user)): ...
+# Require login like send_message, take the sender from current_user (never from
+# the request), check kind/size/type, then hand off to message_service. FastAPI
+# needs the "python-multipart" package for UploadFile/Form -- a new dependency,
+# so flag it to the team first (context.md section 7).
+
+
 @router.get("/messages", response_model=list[MessageOut])
 def get_messages(
     limit: int = Query(50, ge=1, le=MAX_MESSAGES_PER_REQUEST),

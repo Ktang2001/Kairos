@@ -30,6 +30,7 @@ from server.services.login_throttle import (
     lock_seconds,
 )
 from server.services.session_service import MAX_SESSIONS_PER_USER
+from shared.text_rules import clean_display_text
 from tests.server.conftest import TEST_PASSWORD
 
 
@@ -407,6 +408,26 @@ def test_team_names_are_cleaned(client: TestClient, session_factory) -> None:
         f"/teams/{team['id']}", json={"name": "\u202eOmega"}, headers=headers
     ).json()
     assert renamed["name"] == "Omega"
+
+
+@pytest.mark.parametrize("value", [None, 5, ["x"], {"a": 1}])
+def test_cleaning_leaves_non_text_alone_for_validation_to_reject(value: object) -> None:
+    # Iterating a number would raise TypeError, i.e. a 500 instead of a 422.
+    assert clean_display_text(value) == value
+
+
+@pytest.mark.parametrize("name", [123, ["Alice"], None])
+def test_a_non_text_account_name_is_a_422_not_a_crash(client: TestClient, name: object) -> None:
+    response = client.post(
+        "/auth/register",
+        json={"name": name, "email": "a@example.com", "password": TEST_PASSWORD},
+    )
+    assert response.status_code == 422
+
+
+def test_a_non_text_team_name_is_a_422_not_a_crash(client: TestClient, lead) -> None:
+    response = client.post("/teams", json={"name": 123}, headers=lead.headers)
+    assert response.status_code == 422
 
 
 # ============================================ 12. docs only from the host

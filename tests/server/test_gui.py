@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import socket
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import Request
@@ -158,3 +159,76 @@ def test_the_server_does_not_trust_forwarded_headers(
     server_window._on_toggle_clicked()
     qtbot.waitUntil(lambda: "Server running" in server_window.status_label.text(), timeout=WAIT_MS)
     assert server_window._uvicorn_server.config.proxy_headers is False
+
+
+def test_no_free_port_in_the_range_is_an_error(busy_port: int) -> None:
+    with pytest.raises(RuntimeError, match="No free port"):
+        gui.find_free_port(gui.HOST, busy_port, max_attempts=1)
+
+
+def test_the_window_reports_when_no_port_is_free(
+    qtbot: QtBot, server_window: gui.ServerWindow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def none_free(*_args, **_kwargs):
+        raise RuntimeError("No free port found in range 8000-8009")
+
+    monkeypatch.setattr(gui, "find_free_port", none_free)
+    server_window.toggle_button.click()
+    assert server_window.status_label.text() == "No free port found in range 8000-8009"
+    assert server_window.toggle_button.isEnabled()  # can try again
+
+
+def test_a_startup_check_with_no_server_just_stops(server_window: gui.ServerWindow) -> None:
+    server_window._startup_timer.start()
+    server_window._check_startup()
+    assert not server_window._startup_timer.isActive()
+
+
+def test_the_server_app_starts_a_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    started: list[str] = []
+
+    class FakeApp:
+        def __init__(self, _argv) -> None:
+            started.append("app")
+
+        def exec(self) -> int:
+            started.append("exec")
+            return 0
+
+    class FakeWindow:
+        def show(self) -> None:
+            started.append("window")
+
+    monkeypatch.setattr(gui, "QApplication", FakeApp)
+    monkeypatch.setattr(gui, "ServerWindow", FakeWindow)
+    with pytest.raises(SystemExit) as exit_info:
+        gui.main()
+    assert exit_info.value.code == 0
+    assert started == ["app", "window", "exec"]
+
+
+def test_while_the_server_is_still_starting_the_check_keeps_waiting(
+    server_window: gui.ServerWindow,
+) -> None:
+    server_window._uvicorn_server = SimpleNamespace(started=False)
+    server_window._server_thread = SimpleNamespace(is_alive=lambda: True)
+    server_window._startup_waited_ms = 0
+    server_window._startup_timer.start()
+    server_window._check_startup()
+    assert server_window._startup_timer.isActive()  # neither "running" nor "failed" yet
+    server_window._startup_timer.stop()
+    server_window._uvicorn_server = server_window._server_thread = None
+
+
+def test_each_message_is_logged_once(
+    server_window: gui.ServerWindow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    messages = [
+        SimpleNamespace(id=1, created_at="10:00", sender="Nick", content="hi"),
+        SimpleNamespace(id=2, created_at="10:01", sender="Kaleb", content="hello"),
+    ]
+    monkeypatch.setattr(gui.message_service, "list_recent_messages", lambda _db, limit: messages)
+    server_window._poll_new_messages()
+    server_window._poll_new_messages()  # the next poll sees the same two
+    assert server_window.log.toPlainText().count("Nick: hi") == 1
+    assert server_window.log.toPlainText().count("Kaleb: hello") == 1

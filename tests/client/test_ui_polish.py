@@ -46,9 +46,12 @@ def _palette(window_colour: str) -> QPalette:
 
 
 def _fake_session(name: str = "Nick", role: str = "member") -> Session:
-    """A signed-in session that never touches the network."""
+    """A signed-in session whose requests fail at once without leaving this
+    computer. (A LAN address would hang each request for the full 5 s
+    timeout, or reach whatever device really has that address.)
+    """
     return Session(
-        client=ApiClient("http://192.168.1.5:8000"),
+        client=ApiClient("http://127.0.0.1:9"),
         user={"id": 1, "name": name, "email": "nick@example.com", "role": role},
     )
 

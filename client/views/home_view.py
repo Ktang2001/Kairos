@@ -19,18 +19,27 @@ Keeping the data fresh and honest:
 
 from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from client.viewmodels import permissions
+from client.viewmodels.attachments import (
+    KIND_FILTERS,
+    KIND_LABELS,
+    AttachmentKind,
+    PendingAttachment,
+)
 from client.viewmodels.home_viewmodel import HomeViewModel
 from client.viewmodels.session_events import SessionEvents
 from client.viewmodels.teams_viewmodel import TeamsViewModel
@@ -102,9 +111,40 @@ class HomeView(QWidget):
         # and then get a validation error back.
         self.message_input.setMaxLength(MAX_CONTENT_LENGTH)
         self.send_button = QPushButton("Send")
+
+        # Attach: one button with a menu for the three kinds. Choosing only
+        # *picks* a file; uploading it is TODO(attachments) in HomeViewModel.
+        self.attach_button = QToolButton()
+        self.attach_button.setText("Attach")
+        self.attach_button.setToolTip("Share a file, image or audio clip")
+        self.attach_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.attach_menu = QMenu(self.attach_button)
+        self.attach_actions = {}
+        for kind in AttachmentKind:
+            action = self.attach_menu.addAction(KIND_LABELS[kind])
+            action.triggered.connect(lambda _checked=False, k=kind: self._choose_attachment(k))
+            self.attach_actions[kind] = action
+        self.attach_button.setMenu(self.attach_menu)
+        #: Asks the user to pick a file of ``kind``; returns a path or "".
+        #: Replaced in tests, so no real dialog opens.
+        self.pick_file = self._open_file_dialog
+
         message_row = QHBoxLayout()
+        message_row.addWidget(self.attach_button)
         message_row.addWidget(self.message_input)
         message_row.addWidget(self.send_button)
+
+        # The chosen attachment, with a button to remove it. Hidden when empty.
+        self.attachment_label = ElidedLabel()
+        self.remove_attachment_button = QPushButton("✕")
+        self.remove_attachment_button.setToolTip("Remove the attachment")
+        self.remove_attachment_button.setFixedWidth(32)
+        self.attachment_row = QWidget()
+        attachment_layout = QHBoxLayout(self.attachment_row)
+        attachment_layout.setContentsMargins(0, 0, 0, 0)
+        attachment_layout.addWidget(self.attachment_label, stretch=1)
+        attachment_layout.addWidget(self.remove_attachment_button)
+        self.attachment_row.setVisible(False)
 
         self.error_label = ErrorLabel()
 
@@ -115,6 +155,7 @@ class HomeView(QWidget):
         self.messages_tab = QWidget()
         messages_layout = QVBoxLayout(self.messages_tab)
         messages_layout.addLayout(message_row)
+        messages_layout.addWidget(self.attachment_row)
         messages_layout.addWidget(self.error_label)
         messages_layout.addWidget(self.log)
 
@@ -141,6 +182,8 @@ class HomeView(QWidget):
         self.sign_out_everywhere_button.clicked.connect(self._sign_out_everywhere)
         self.send_button.clicked.connect(self._send)
         self.message_input.returnPressed.connect(self._send)
+        self.remove_attachment_button.clicked.connect(viewmodel.clear_attachment)
+        viewmodel.attachment_changed.connect(self._show_attachment)
         self.retry_button.clicked.connect(self.refresh_current_tab)
         self.tabs.currentChanged.connect(lambda _index: self.refresh_current_tab())
         viewmodel.message_sent.connect(self._on_message_sent)
@@ -167,15 +210,13 @@ class HomeView(QWidget):
         self.refresh_timer.start()
 
     def refresh_current_tab(self) -> None:
-        """Reload whatever is on screen. Skipped if it is already loading."""
+        """Reload whatever is on screen (queued if it is already loading)."""
         current = self.tabs.currentWidget()
-        if current is self.teams_view and not self.teams_viewmodel.busy:
-            self.teams_viewmodel.refresh()
-        elif current is self.users_view and not self.users_viewmodel.busy:
+        if current is self.users_view:
             self.users_viewmodel.refresh()
-        elif current is self.messages_tab and not self.teams_viewmodel.busy:
-            # Nothing to reload here, but a cheap request lets Retry (and the
-            # timer) discover that the server is back.
+        else:
+            # Teams -- or Messages, where nothing needs reloading but a cheap
+            # request lets Retry (and the timer) discover the server is back.
             self.teams_viewmodel.refresh()
 
     @Slot(bool)
@@ -212,6 +253,21 @@ class HomeView(QWidget):
     def _send(self) -> None:
         self.viewmodel.send_message(self.message_input.text())
 
+    def _open_file_dialog(self, kind: AttachmentKind) -> str:
+        path, _filter = QFileDialog.getOpenFileName(
+            self, f"Attach {kind.value}", "", KIND_FILTERS[kind]
+        )
+        return path
+
+    def _choose_attachment(self, kind: AttachmentKind) -> None:
+        path = self.pick_file(kind)
+        if path:  # "" means the user cancelled the dialog
+            self.viewmodel.attach(path, kind)
+
+    def _show_attachment(self, attachment: PendingAttachment | None) -> None:
+        self.attachment_row.setVisible(attachment is not None)
+        self.attachment_label.set_full_text(attachment.describe() if attachment else "")
+
     def _set_sending(self, sending: bool) -> None:
         """Lock the box while a message is on its way, so a second Enter or
         click cannot send it again, and show that something is happening.
@@ -223,6 +279,8 @@ class HomeView(QWidget):
         locked = sending or self.viewmodel.signing_out
         self.message_input.setEnabled(not locked)
         self.send_button.setEnabled(not locked)
+        self.attach_button.setEnabled(not locked)
+        self.remove_attachment_button.setEnabled(not locked)
         self.send_button.setText("Sending…" if sending else "Send")
         if not locked:
             self.message_input.setFocus()
@@ -247,6 +305,8 @@ class HomeView(QWidget):
             self.sign_out_everywhere_button,
             self.send_button,
             self.message_input,
+            self.attach_button,
+            self.remove_attachment_button,
         ):
             widget.setEnabled(False)
         button.setText(label)

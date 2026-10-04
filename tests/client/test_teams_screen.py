@@ -19,7 +19,7 @@ from client.viewmodels.login_viewmodel import Session
 from client.views.home_view import HomeView
 from client.views.teams_view import TeamsView
 from shared.roles import ROLE_ADMIN, ROLE_MEMBER, ROLE_PROJECT_LEAD
-from tests.client.conftest import TEST_PASSWORD, set_live_role, unique_email
+from tests.client.conftest import SETUP_TIMEOUT, TEST_PASSWORD, set_live_role, unique_email
 
 WAIT_MS = 8000
 
@@ -33,7 +33,7 @@ class Person:
 
 def _person(live_server: str, name: str, role: str = ROLE_MEMBER) -> Person:
     email = unique_email(name.lower())
-    client = ApiClient(live_server)
+    client = ApiClient(live_server, timeout=SETUP_TIMEOUT)
     client.register(name, email, TEST_PASSWORD)
     if role != ROLE_MEMBER:
         set_live_role(email, role)

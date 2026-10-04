@@ -17,6 +17,9 @@ from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+#: TODO(attachments): uploads will be bigger than this. Give the upload route
+#: its own (larger) limit instead of raising this one for every route -- the
+#: small limit is what stops a single huge request exhausting the host's memory.
 #: Far above any legitimate request (the largest is a 2000-character message
 #: description), far below anything that strains memory.
 MAX_BODY_BYTES = 1024 * 1024

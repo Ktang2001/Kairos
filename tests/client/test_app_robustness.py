@@ -10,26 +10,31 @@ handles a lost connection or a dead session cleanly.
 All against the real API (``live_server``) through the real ``MainWindow``.
 """
 
+import threading
+from collections.abc import Iterator
+
 import httpx
 import pytest
 from PySide6.QtCore import Qt
 from pytestqt.qtbot import QtBot
 
-from client.api_client import ApiClient
+from client.api_client import ApiClient, ApiError
 from client.main import SESSION_EXPIRED_MESSAGE, MainWindow
 from client.settings import ClientSettings
 from client.viewmodels.home_viewmodel import HomeViewModel
 from client.viewmodels.login_viewmodel import Session
+from client.viewmodels.teams_viewmodel import TeamsViewModel
+from client.viewmodels.users_viewmodel import UsersViewModel
 from client.views.home_view import AUTO_REFRESH_MS, HomeView
 from shared.roles import ROLE_ADMIN, ROLE_PROJECT_LEAD
-from tests.client.conftest import TEST_PASSWORD, set_live_role, unique_email
+from tests.client.conftest import SETUP_TIMEOUT, TEST_PASSWORD, set_live_role, unique_email
 
 WAIT_MS = 8000
 
 
 def _register(live_server: str, name: str, role: str | None = None) -> str:
     email = unique_email(name.lower())
-    ApiClient(live_server).register(name, email, TEST_PASSWORD)
+    ApiClient(live_server, timeout=SETUP_TIMEOUT).register(name, email, TEST_PASSWORD)
     if role:
         set_live_role(email, role)
     return email
@@ -46,7 +51,11 @@ def _signed_in_window(
     view.email_input.setText(email)
     view.password_input.setText(TEST_PASSWORD)
     view.submit_sign_in()
-    qtbot.waitUntil(lambda: win.home_view is not None, timeout=WAIT_MS)
+    qtbot.waitUntil(
+        lambda: win.home_view is not None or not view.error_label.isHidden(), timeout=WAIT_MS
+    )
+    # If sign-in failed, say why instead of just "timed out".
+    assert win.home_view is not None, f"sign-in failed: {view.error_label.text()}"
     _settle(qtbot, win.home_view)
     return win
 
@@ -71,7 +80,7 @@ def test_a_session_ended_elsewhere_returns_to_login_with_a_message(
     win = _signed_in_window(qtbot, settings, live_server, email)
 
     # "Sign out everywhere" from another computer kills this window's token.
-    other = ApiClient(live_server)
+    other = ApiClient(live_server, timeout=SETUP_TIMEOUT)
     other.login(email, TEST_PASSWORD)
     other.logout_everywhere()
 
@@ -167,6 +176,97 @@ def test_the_banner_clears_by_itself_on_the_next_good_request(
     qtbot.waitUntil(lambda: not home.offline, timeout=WAIT_MS)
 
 
+# ================================================ refresh while still loading
+#
+# Retry and the timer used to be silently dropped while a request was still
+# running (up to 5 s against a host that is down), leaving the banner up.
+# These use a fake client whose requests wait on a gate, so "still running"
+# is certain rather than a matter of timing.
+
+
+class GatedClient:
+    """Each load waits for ``gate``; ``fail_next`` makes the next one fail."""
+
+    def __init__(self) -> None:
+        self.token = "t"
+        self.gate = threading.Event()
+        self.loads = 0
+        self.fail_next = False
+
+    def _load(self) -> None:
+        self.loads += 1
+        assert self.gate.wait(5), "test never opened the gate"
+        if self.fail_next:
+            self.fail_next = False
+            raise ApiError("Can't reach the server at http://127.0.0.1:9. Is it running?")
+
+    def me(self) -> dict:
+        self._load()
+        return {"id": 1, "name": "N", "email": "n@x.co", "role": ROLE_ADMIN}
+
+    def list_teams(self) -> list[dict]:
+        return []
+
+    def list_users(self) -> list[dict]:
+        self._load()
+        return []
+
+
+@pytest.fixture
+def gated() -> Iterator[GatedClient]:
+    client = GatedClient()
+    yield client
+    client.gate.set()  # never leave a pool thread waiting
+
+
+def _gated_session(client: GatedClient) -> Session:
+    return Session(
+        client=client, user={"id": 1, "name": "N", "email": "n@x.co", "role": ROLE_ADMIN}
+    )
+
+
+@pytest.mark.parametrize("viewmodel_class", [TeamsViewModel, UsersViewModel])
+def test_refreshes_asked_for_while_loading_run_once_afterwards(
+    qtbot: QtBot, gated: GatedClient, viewmodel_class: type
+) -> None:
+    viewmodel = viewmodel_class(_gated_session(gated))
+    viewmodel.refresh()
+    for _ in range(3):  # e.g. Retry clicked three times while it hangs
+        viewmodel.refresh()
+    assert viewmodel.busy and gated.loads <= 1
+
+    gated.gate.set()
+    qtbot.waitUntil(lambda: gated.loads == 2 and not viewmodel.busy, timeout=WAIT_MS)
+    qtbot.wait(100)
+    assert gated.loads == 2  # one follow-up, not three
+
+
+@pytest.mark.parametrize("viewmodel_class", [TeamsViewModel, UsersViewModel])
+def test_a_refresh_queued_behind_a_failure_still_runs(
+    qtbot: QtBot, gated: GatedClient, viewmodel_class: type
+) -> None:
+    viewmodel = viewmodel_class(_gated_session(gated))
+    errors: list[str] = []
+    viewmodel.error_changed.connect(errors.append)
+    gated.fail_next = True
+    viewmodel.refresh()  # the host is down...
+    viewmodel.refresh()  # ...and Retry is pressed before that request gives up
+
+    gated.gate.set()
+    qtbot.waitUntil(lambda: gated.loads == 2 and not viewmodel.busy, timeout=WAIT_MS)
+    assert any("Can't reach" in e for e in errors)
+    assert viewmodel.loaded  # the retry got through
+
+
+def test_no_refresh_is_queued_when_none_was_asked_for(qtbot: QtBot, gated: GatedClient) -> None:
+    viewmodel = TeamsViewModel(_gated_session(gated))
+    gated.gate.set()
+    viewmodel.refresh()
+    qtbot.waitUntil(lambda: viewmodel.loaded, timeout=WAIT_MS)
+    qtbot.wait(100)
+    assert gated.loads == 1
+
+
 # ========================================================== loading states
 
 
@@ -223,7 +323,7 @@ def test_being_added_to_a_team_shows_up_on_the_next_refresh(
     home = win.home_view
     assert home.teams_viewmodel.teams == []
 
-    lead = ApiClient(live_server)
+    lead = ApiClient(live_server, timeout=SETUP_TIMEOUT)
     lead.register("Lena", unique_email("lena"), TEST_PASSWORD)
     set_live_role(lead.me()["email"], ROLE_PROJECT_LEAD)
     team = lead.create_team(f"Surprise {unique_email()}")
@@ -311,7 +411,7 @@ def test_sign_out_everywhere_ends_every_session(
     qtbot: QtBot, settings: ClientSettings, live_server: str
 ) -> None:
     email = _register(live_server, "Max")
-    laptop = ApiClient(live_server)
+    laptop = ApiClient(live_server, timeout=SETUP_TIMEOUT)
     laptop.login(email, TEST_PASSWORD)
 
     win = _signed_in_window(qtbot, settings, live_server, email)

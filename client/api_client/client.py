@@ -253,3 +253,24 @@ class ApiClient:
 
     def set_role(self, user_id: int, role: str) -> dict:
         return self._request("PUT", f"/users/{user_id}/role", json={"role": role})
+
+    # ------------------------------------------------------- attachments
+
+    def upload_attachment(
+        self, path: "os.PathLike[str] | str", kind: str, content: str = ""
+    ) -> dict:
+        """Upload a file, image or audio clip as a message.
+
+        TODO(attachments): not built yet -- nothing calls this until
+        ``HomeViewModel._send_with_attachment`` is connected. Suggested shape:
+
+        * POST multipart/form-data to a new route (e.g. ``/messages/attachments``)
+          with the file, ``kind`` ("file" / "image" / "audio") and the optional
+          text ``content``. httpx does multipart with
+          ``files={"file": (name, open(path, "rb"))}, data={"kind": kind, ...}``.
+        * ``_request`` above only sends JSON; give it ``files=`` / ``data=``
+          parameters (keep the auth header, error handling and the
+          connection/expiry hooks it already has).
+        * Return the server's stored message (its ``MessageOut``).
+        """
+        raise NotImplementedError("Attachment upload isn't built yet - see TODO(attachments).")

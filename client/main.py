@@ -4,6 +4,7 @@ from PySide6.QtCore import Slot
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 
+from client.main_thread_gc import MainThreadGarbageCollector
 from client.settings import ClientSettings
 from client.viewmodels.home_viewmodel import HomeViewModel
 from client.viewmodels.login_viewmodel import LoginViewModel, Session
@@ -98,6 +99,8 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)
+    # Before any background request can run: see client/main_thread_gc.py.
+    _collector = MainThreadGarbageCollector(app)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

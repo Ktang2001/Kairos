@@ -14,6 +14,11 @@ class Message(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     sender: Mapped[str]
     content: Mapped[str]
+    # TODO(attachments): add nullable columns for an attached file, e.g.
+    # attachment_kind ("file" / "image" / "audio"), attachment_name (original
+    # file name, for display), attachment_path (where the server stored it) and
+    # attachment_size. Then generate a migration:
+    #   alembic -c server/db/alembic.ini revision --autogenerate -m "message attachments"
     created_at: Mapped[datetime] = mapped_column(
         DateTime(), server_default=func.now(), nullable=False
     )

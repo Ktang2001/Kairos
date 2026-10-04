@@ -1,9 +1,11 @@
 """The signed-in home screen, without any widgets: who is signed in, sending a
-test message, and signing out (here or everywhere).
+test message (optionally with a file, image or audio attachment), and signing
+out (here or everywhere).
 """
 
 from PySide6.QtCore import QObject, Signal
 
+from client.viewmodels.attachments import AttachmentKind, PendingAttachment
 from client.viewmodels.background import BackgroundRunner
 from client.viewmodels.login_viewmodel import Session
 from shared.roles import ROLE_DISPLAY_NAMES
@@ -16,6 +18,8 @@ class HomeViewModel(QObject):
     sending_changed = Signal(bool)
     #: A send failed; carries the text so the view can give it back.
     send_failed = Signal(str)
+    #: The attachment waiting to be sent changed: a PendingAttachment, or None.
+    attachment_changed = Signal(object)
     #: The message to show, or "" to clear it.
     error_changed = Signal(str)
     #: Sign-out finished; the window should go back to the login screen.
@@ -32,6 +36,7 @@ class HomeViewModel(QObject):
         self._runner = runner or BackgroundRunner(self)
         self._signing_out = False
         self._sending = False
+        self._attachment: PendingAttachment | None = None
 
     @property
     def display_name(self) -> str:
@@ -52,6 +57,26 @@ class HomeViewModel(QObject):
     def signing_out(self) -> bool:
         return self._signing_out
 
+    @property
+    def attachment(self) -> PendingAttachment | None:
+        return self._attachment
+
+    def attach(self, path: str, kind: AttachmentKind) -> None:
+        """Hold ``path`` as the attachment for the next send (replacing any)."""
+        try:
+            attachment = PendingAttachment.from_path(path, kind)
+        except ValueError as exc:
+            self.error_changed.emit(str(exc))
+            return
+        self.error_changed.emit("")
+        self._attachment = attachment
+        self.attachment_changed.emit(attachment)
+
+    def clear_attachment(self) -> None:
+        if self._attachment is not None:
+            self._attachment = None
+            self.attachment_changed.emit(None)
+
     def send_message(self, text: str) -> None:
         """Send a connectivity-test message under the signed-in user's name.
 
@@ -59,7 +84,12 @@ class HomeViewModel(QObject):
         pressing Enter again during a slow send posted the same message twice.
         """
         content = text.strip()
-        if not content or self._signing_out or self._sending:
+        if self._signing_out or self._sending:
+            return
+        if self._attachment is not None:
+            self._send_with_attachment(content, self._attachment)
+            return
+        if not content:
             return
         self.error_changed.emit("")
         self._set_sending(True)
@@ -67,6 +97,37 @@ class HomeViewModel(QObject):
             lambda: self.session.client.send_message(content),
             on_success=lambda _body: self._sent(content),
             on_error=lambda message: self._failed(content, message),
+        )
+
+    def _send_with_attachment(self, content: str, attachment: PendingAttachment) -> None:
+        """Send a message that carries a file, image or audio clip.
+
+        TODO(attachments): connect this to the server. Nothing is uploaded or
+        stored yet -- this only tells the user so, and keeps their text and
+        attachment so nothing is lost. To finish it:
+
+        1. Upload the file in the background, like ``send_message`` does:
+               self._set_sending(True)
+               self._runner.run(
+                   lambda: self.session.client.upload_attachment(
+                       attachment.path, attachment.kind, content
+                   ),
+                   on_success=lambda _body: self._attachment_sent(content, attachment),
+                   on_error=lambda message: self._failed(content, message),
+               )
+           ``ApiClient.upload_attachment`` is stubbed in
+           client/api_client/client.py (marked TODO(attachments)).
+        2. Write ``_attachment_sent(content, attachment)``: call
+           ``self._set_sending(False)`` and ``self.clear_attachment()``, then
+           emit ``message_sent`` with e.g. f"{content} [{attachment.name}]" so
+           the message log shows it.
+        3. Server side -- also marked TODO(attachments): a route in
+           server/api/messages.py, storage in server/services/message_service.py,
+           columns in server/models/message.py (needs an Alembic migration),
+           and the 1 MB request limit in server/api/protection.py.
+        """
+        self.error_changed.emit(
+            f"Attachments aren't connected to the server yet - {attachment.name} wasn't sent."
         )
 
     def sign_out(self) -> None:

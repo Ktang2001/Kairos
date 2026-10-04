@@ -52,6 +52,8 @@ class TeamsViewModel(QObject):
         self.session = session
         self._runner = runner or BackgroundRunner(self)
         self._busy = False
+        #: A refresh was asked for while busy; it runs when the current job ends.
+        self._refresh_again = False
         self.me: dict = dict(session.user)
         self.teams: list[dict] = []
         self.team: dict | None = None
@@ -70,6 +72,15 @@ class TeamsViewModel(QObject):
     # ------------------------------------------------------------- actions
 
     def refresh(self) -> None:
+        """Reload everything; if a job is running, reload once it finishes.
+
+        Queued rather than dropped: Retry (or the timer) pressed while a slow
+        request is still timing out must not be silently ignored. Repeated
+        calls while busy collapse into a single follow-up refresh.
+        """
+        if self._busy:
+            self._refresh_again = True
+            return
         self._run(None)
 
     def select_team(self, team_id: int | None) -> None:
@@ -175,10 +186,17 @@ class TeamsViewModel(QObject):
         self.team = detail
         self.teams_changed.emit(teams)
         self.team_changed.emit(detail)
+        self._run_queued_refresh()
 
     def _failed(self, message: str) -> None:
         self._set_busy(False)
         self.error_changed.emit(message)
+        self._run_queued_refresh()
+
+    def _run_queued_refresh(self) -> None:
+        if self._refresh_again:
+            self._refresh_again = False
+            self.refresh()
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy

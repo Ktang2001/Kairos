@@ -27,6 +27,8 @@ class UsersViewModel(QObject):
         self.session = session
         self._runner = runner or BackgroundRunner(self)
         self._busy = False
+        #: A refresh was asked for while busy; it runs when the current job ends.
+        self._refresh_again = False
         self.users: list[dict] = []
         #: False until the first load finishes ("Loading..." until then).
         self.loaded = False
@@ -40,6 +42,12 @@ class UsersViewModel(QObject):
         return self.session.user["id"]
 
     def refresh(self) -> None:
+        """Reload the list; if a job is running, reload once it finishes
+        (see TeamsViewModel.refresh).
+        """
+        if self._busy:
+            self._refresh_again = True
+            return
         self._run(None)
 
     def set_role(self, user_id: int, role: str) -> None:
@@ -67,12 +75,19 @@ class UsersViewModel(QObject):
         self._set_busy(False)
         self.users = users
         self.users_changed.emit(users)
+        self._run_queued_refresh()
 
     def _failed(self, message: str) -> None:
         self._set_busy(False)
         self.error_changed.emit(message)
         # Re-show the server's real roles, so a refused change snaps back.
         self.users_changed.emit(self.users)
+        self._run_queued_refresh()
+
+    def _run_queued_refresh(self) -> None:
+        if self._refresh_again:
+            self._refresh_again = False
+            self.refresh()
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
