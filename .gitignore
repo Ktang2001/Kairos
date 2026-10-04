@@ -22,10 +22,6 @@ server/db/kairos.db
 *.db-shm
 *.sqlite3
 
-# TLS cert/key and at-rest encryption key - machine-local secrets, never shared
-server/db/tls/
-server/db/kairos.key
-
 # Editors / OS
 .vscode/
 .idea/
