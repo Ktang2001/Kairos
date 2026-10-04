@@ -1,0 +1,220 @@
+/* Kairos — Light theme */
+
+QWidget {
+    background-color: #F5F6F8;
+    color: #1B1F27;
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog {
+    background-color: #F5F6F8;
+}
+
+QLabel {
+    background: transparent;
+}
+
+QLabel[muted="true"] {
+    color: #6B7280;
+}
+
+/* --- Buttons --- */
+QPushButton {
+    background-color: #FFFFFF;
+    border: 1px solid #D8DCE3;
+    border-radius: 6px;
+    padding: 6px 14px;
+    color: #1B1F27;
+}
+
+QPushButton:hover {
+    background-color: #EEF1F5;
+}
+
+QPushButton:pressed {
+    background-color: #DCE8FF;
+}
+
+QPushButton:disabled {
+    color: #A7ADB6;
+    background-color: #F5F6F8;
+    border-color: #E5E8EC;
+}
+
+QPushButton[primary="true"] {
+    background-color: #3D6AF2;
+    border: 1px solid #3D6AF2;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+QPushButton[primary="true"]:hover {
+    background-color: #2F56D1;
+    border-color: #2F56D1;
+}
+
+QPushButton[primary="true"]:disabled {
+    background-color: #AFC3F7;
+    border-color: #AFC3F7;
+    color: #F0F3FC;
+}
+
+/* --- Inputs --- */
+QLineEdit, QComboBox, QSpinBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D8DCE3;
+    border-radius: 6px;
+    padding: 5px 8px;
+    selection-background-color: #3D6AF2;
+    selection-color: #FFFFFF;
+}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
+    border: 1px solid #3D6AF2;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+/* --- Lists --- */
+QListWidget {
+    background-color: #FFFFFF;
+    border: 1px solid #D8DCE3;
+    border-radius: 8px;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin: 2px 4px;
+}
+
+QListWidget::item:hover {
+    background-color: #EEF1F5;
+}
+
+QListWidget::item:selected {
+    background-color: #DCE8FF;
+    color: #1B1F27;
+}
+
+QListWidget#navList {
+    background-color: #FFFFFF;
+    border: none;
+    border-right: 1px solid #D8DCE3;
+}
+
+QListWidget#navList::item {
+    padding: 10px 12px;
+    margin: 2px 8px;
+}
+
+QListWidget#navList::item:selected {
+    background-color: #3D6AF2;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+/* --- Group boxes / cards --- */
+QGroupBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D8DCE3;
+    border-radius: 8px;
+    margin-top: 10px;
+    padding-top: 14px;
+    font-weight: 600;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: #1B1F27;
+}
+
+/* --- Tabs --- */
+QTabWidget::pane {
+    border: 1px solid #D8DCE3;
+    border-radius: 8px;
+    background-color: #FFFFFF;
+}
+
+QTabBar::tab {
+    background-color: transparent;
+    padding: 8px 16px;
+    color: #6B7280;
+}
+
+QTabBar::tab:selected {
+    color: #3D6AF2;
+    font-weight: 600;
+    border-bottom: 2px solid #3D6AF2;
+}
+
+/* --- Scrollbars --- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background: #D8DCE3;
+    border-radius: 5px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #B8BEC9;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+/* --- Server tiles (client/views/server_tile.py) --- */
+QFrame#serverTile {
+    background-color: #FFFFFF;
+    border: 1px solid #D8DCE3;
+    border-radius: 10px;
+}
+
+QFrame#serverTile:hover {
+    border: 1px solid #3D6AF2;
+    background-color: #EEF1F5;
+}
+
+QLabel#serverTileName {
+    font-weight: 600;
+    font-size: 11pt;
+}
+
+/* --- Calendar --- */
+QCalendarWidget {
+    background-color: #FFFFFF;
+}
+
+QCalendarWidget QToolButton {
+    color: #1B1F27;
+}
+
+/* --- Dashboard --- */
+QLabel#statValue {
+    font-size: 20pt;
+    font-weight: bold;
+}
+
+QLabel#clockTime {
+    font-size: 28pt;
+    font-weight: 600;
+    color: #3D6AF2;
+}
+
+/* --- Chat --- */
+QLabel#chatThreadTitle {
+    font-size: 13pt;
+    font-weight: 600;
+}

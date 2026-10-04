@@ -18,3 +18,14 @@ def get_db() -> Iterator[Session]:
         yield db
     finally:
         db.close()
+
+
+def get_session_factory() -> sessionmaker[Session]:
+    """A dependency that resolves to the active sessionmaker itself.
+
+    For code that needs to open and close its own short-lived session rather than
+    hold a request-scoped one for its whole lifetime - namely the WebSocket endpoint
+    (server/api/ws_chat.py), where `Depends(get_db)` would otherwise stay open for
+    the entire connection. Overridable in tests the same way as `get_db`.
+    """
+    return SessionLocal
