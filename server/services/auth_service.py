@@ -65,9 +65,14 @@ def _get_or_create_role(db: Session, name: str) -> Role:
     return role
 
 
-def create_user(db: Session, name: str, email: str, password: str) -> User:
+def create_user(
+    db: Session, name: str, email: str, password: str, two_factor_enabled: bool = False
+) -> User:
     """Sign up a new account. Always created with the default member role - role
-    promotion is a separate, out-of-scope governance action.
+    promotion is a separate, out-of-scope governance action. `two_factor_enabled`
+    is the signer-upper's own choice (a checkbox on the signup form - see
+    client/views/auth_dialog.py) of whether POST /auth/login will require an
+    emailed code; it has no effect on signup itself, which never does 2FA.
     """
     name = name.strip()
     email = email.strip().lower()
@@ -81,7 +86,13 @@ def create_user(db: Session, name: str, email: str, password: str) -> User:
         raise ValueError("that email is already registered")
 
     role = _get_or_create_role(db, DEFAULT_SIGNUP_ROLE)
-    user = User(name=name, email=email, password_hash=hash_password(password), role_id=role.id)
+    user = User(
+        name=name,
+        email=email,
+        password_hash=hash_password(password),
+        role_id=role.id,
+        two_factor_enabled=two_factor_enabled,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)

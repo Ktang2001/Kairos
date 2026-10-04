@@ -55,6 +55,35 @@ def test_login_success_enters_verify_step(qtbot, monkeypatch) -> None:
     assert dialog._pending_token == "pend-1"
 
 
+def test_login_without_2fa_accepts_dialog_immediately(qtbot, monkeypatch) -> None:
+    """An account that didn't opt into 2FA at signup gets a plain AuthResult
+    (has "token") back from /auth/login, not a pending_token - the dialog must
+    accept right away rather than entering the verify-code page."""
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        _fake_post_dispatcher(
+            {
+                "/auth/login": _FakeResponse(
+                    200,
+                    {"id": 1, "name": "Alice", "email": "alice@example.com", "token": "tok-alice"},
+                )
+            }
+        ),
+    )
+
+    dialog = AuthDialog(base_url="http://localhost:8000")
+    qtbot.addWidget(dialog)
+    dialog.login_email.setText("alice@example.com")
+    dialog.login_password.setText("hunter22")
+
+    dialog._on_login()
+
+    assert dialog.result() == AuthDialog.DialogCode.Accepted
+    assert dialog.result_user_id == 1
+    assert dialog.result_token == "tok-alice"
+
+
 def test_login_wrong_password_shows_error(qtbot, monkeypatch) -> None:
     monkeypatch.setattr(
         httpx, "post", _fake_post_dispatcher({"/auth/login": _FakeResponse(401, {})})
@@ -72,14 +101,16 @@ def test_login_wrong_password_shows_error(qtbot, monkeypatch) -> None:
     assert "Incorrect email or password" in dialog.login_status.text()
 
 
-def test_signup_success_enters_verify_step(qtbot, monkeypatch) -> None:
+def test_signup_success_accepts_dialog(qtbot, monkeypatch) -> None:
+    """Signup has no 2FA step - unlike login, a successful signup accepts the
+    dialog immediately (see server/api/auth.py)."""
     monkeypatch.setattr(
         httpx,
         "post",
         _fake_post_dispatcher(
             {
                 "/auth/signup": _FakeResponse(
-                    200, {"pending_token": "pend-2", "email": "bob@example.com"}
+                    200, {"id": 2, "name": "Bob", "email": "bob@example.com", "token": "tok-bob"}
                 )
             }
         ),
@@ -93,9 +124,34 @@ def test_signup_success_enters_verify_step(qtbot, monkeypatch) -> None:
 
     dialog._on_signup()
 
-    assert dialog.result() != AuthDialog.DialogCode.Accepted
-    assert dialog._pages.currentIndex() == 1
-    assert dialog._pending_token == "pend-2"
+    assert dialog.result() == AuthDialog.DialogCode.Accepted
+    assert dialog.result_user_id == 2
+    assert dialog.result_user_name == "Bob"
+    assert dialog.result_token == "tok-bob"
+
+
+def test_signup_sends_the_2fa_checkbox_choice(qtbot, monkeypatch) -> None:
+    captured_payloads = []
+
+    def _post(url, json=None, timeout=5, verify=None):
+        captured_payloads.append(json)
+        return _FakeResponse(
+            200, {"id": 2, "name": "Bob", "email": "bob@example.com", "token": "tok-bob"}
+        )
+
+    monkeypatch.setattr(httpx, "post", _post)
+
+    dialog = AuthDialog(base_url="http://localhost:8000")
+    qtbot.addWidget(dialog)
+    dialog.signup_name.setText("Bob")
+    dialog.signup_email.setText("bob@example.com")
+    dialog.signup_password.setText("hunter22")
+
+    assert dialog.signup_2fa_checkbox.isChecked() is False  # off by default
+    dialog.signup_2fa_checkbox.setChecked(True)
+    dialog._on_signup()
+
+    assert captured_payloads[0]["two_factor_enabled"] is True
 
 
 def test_signup_duplicate_email_shows_error(qtbot, monkeypatch) -> None:
@@ -185,11 +241,11 @@ def test_resend_code_shows_confirmation(qtbot, monkeypatch) -> None:
         "post",
         _fake_post_dispatcher(
             {
-                "/auth/signup": _FakeResponse(
-                    200, {"pending_token": "pend-2", "email": "bob@example.com"}
+                "/auth/login": _FakeResponse(
+                    200, {"pending_token": "pend-1", "email": "alice@example.com"}
                 ),
                 "/auth/resend-code": _FakeResponse(
-                    200, {"pending_token": "pend-2", "email": "bob@example.com"}
+                    200, {"pending_token": "pend-1", "email": "alice@example.com"}
                 ),
             }
         ),
@@ -197,10 +253,9 @@ def test_resend_code_shows_confirmation(qtbot, monkeypatch) -> None:
 
     dialog = AuthDialog(base_url="http://localhost:8000")
     qtbot.addWidget(dialog)
-    dialog.signup_name.setText("Bob")
-    dialog.signup_email.setText("bob@example.com")
-    dialog.signup_password.setText("hunter22")
-    dialog._on_signup()
+    dialog.login_email.setText("alice@example.com")
+    dialog.login_password.setText("hunter22")
+    dialog._on_login()
 
     dialog._on_resend_code()
 

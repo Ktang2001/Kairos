@@ -1,5 +1,6 @@
 import httpx
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -19,13 +20,15 @@ class AuthDialog(QDialog):
     """Sign up for a new Kairos account or log in to an existing one.
 
     Real credential-backed identification (password hashed + verified server-side -
-    see server/services/auth_service.py), followed by a second step: an emailed
-    6-digit 2FA code (server/services/verification_service.py) must be entered
-    before a session is issued - required on both signup and login, so an
-    account can't be created with an email the signer-upper doesn't actually
-    control. Only once that code is confirmed does the server return a session
-    token (see server/services/session_service.py), which every subsequent
-    request must carry as `Authorization: Bearer <token>`
+    see server/services/auth_service.py). Signup always issues a session
+    immediately - it never does 2FA itself - but has a checkbox letting the
+    signer-upper opt in to requiring an emailed 6-digit code
+    (server/services/verification_service.py) on future logins
+    (User.two_factor_enabled). Login then branches on that per-account choice:
+    opted-in accounts get a `pending_token` and must complete the verify-code
+    step; everyone else gets a session immediately, same as signup. Either way,
+    the final session token (see server/services/session_service.py) is what
+    every subsequent request must carry as `Authorization: Bearer <token>`
     (see server/api/dependencies.py).
     """
 
@@ -119,6 +122,7 @@ class AuthDialog(QDialog):
         self.signup_email = QLineEdit()
         self.signup_password = QLineEdit()
         self.signup_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.signup_2fa_checkbox = QCheckBox("Require an emailed code when logging in (2FA)")
         self.signup_status = QLabel("")
 
         form = QFormLayout()
@@ -131,6 +135,7 @@ class AuthDialog(QDialog):
 
         layout = QVBoxLayout()
         layout.addLayout(form)
+        layout.addWidget(self.signup_2fa_checkbox)
         layout.addWidget(button)
         layout.addWidget(self.signup_status)
 
@@ -144,6 +149,12 @@ class AuthDialog(QDialog):
         self.verify_code_input.clear()
         self.verify_status.setText("")
         self._pages.setCurrentIndex(1)
+
+    def _accept_with_auth_result(self, person: dict) -> None:
+        self.result_user_id = person["id"]
+        self.result_user_name = person["name"]
+        self.result_token = person["token"]
+        self.accept()
 
     def _on_login(self) -> None:
         email = self.login_email.text().strip()
@@ -166,8 +177,8 @@ class AuthDialog(QDialog):
         if response.status_code == 401:
             self.login_status.setText("Incorrect email or password.")
             return
-        if response.status_code == 429:
-            self.login_status.setText(response.json().get("detail", "Too many attempts."))
+        if response.status_code in (429, 503):
+            self.login_status.setText(response.json().get("detail", "Could not log in."))
             return
         try:
             response.raise_for_status()
@@ -175,9 +186,14 @@ class AuthDialog(QDialog):
             self.login_status.setText(f"Login failed: {exc}")
             return
 
-        pending = response.json()
+        body = response.json()
         self.login_status.setText("")
-        self._enter_verify_step(pending["email"], pending["pending_token"])
+        if "token" in body:
+            # This account didn't opt into 2FA at signup - a session comes back
+            # immediately, same as signup always does (see server/api/auth.py).
+            self._accept_with_auth_result(body)
+        else:
+            self._enter_verify_step(body["email"], body["pending_token"])
 
     def _on_signup(self) -> None:
         name = self.signup_name.text().strip()
@@ -190,7 +206,12 @@ class AuthDialog(QDialog):
         try:
             response = httpx.post(
                 f"{self._base_url}/auth/signup",
-                json={"name": name, "email": email, "password": password},
+                json={
+                    "name": name,
+                    "email": email,
+                    "password": password,
+                    "two_factor_enabled": self.signup_2fa_checkbox.isChecked(),
+                },
                 timeout=5,
                 verify=self._verify,
             )
@@ -207,9 +228,9 @@ class AuthDialog(QDialog):
             self.signup_status.setText(f"Signup failed: {exc}")
             return
 
-        pending = response.json()
-        self.signup_status.setText("")
-        self._enter_verify_step(pending["email"], pending["pending_token"])
+        # No 2FA step for signup itself (see server/api/auth.py) - the session is
+        # ready immediately, whatever the chosen 2FA-on-login preference above.
+        self._accept_with_auth_result(response.json())
 
     def _on_verify_code(self) -> None:
         code = self.verify_code_input.text().strip()
@@ -237,11 +258,7 @@ class AuthDialog(QDialog):
             self.verify_status.setText(f"Verification failed: {exc}")
             return
 
-        person = response.json()
-        self.result_user_id = person["id"]
-        self.result_user_name = person["name"]
-        self.result_token = person["token"]
-        self.accept()
+        self._accept_with_auth_result(response.json())
 
     def _on_resend_code(self) -> None:
         try:
@@ -255,7 +272,7 @@ class AuthDialog(QDialog):
             self.verify_status.setText(f"Could not reach server: {exc}")
             return
 
-        if response.status_code == 429:
+        if response.status_code in (429, 503):
             self.verify_status.setText(
                 response.json().get("detail", "Please wait before retrying.")
             )

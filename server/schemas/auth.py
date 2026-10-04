@@ -5,6 +5,7 @@ class SignupRequest(BaseModel):
     name: str
     email: str
     password: str
+    two_factor_enabled: bool = False
 
 
 class LoginRequest(BaseModel):
