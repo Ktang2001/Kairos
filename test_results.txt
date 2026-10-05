@@ -1,0 +1,685 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- /home/kalebtangen/Projects/Karios/Kairos/.venv/bin/python
+cachedir: .pytest_cache
+PySide6 6.11.2 -- Qt runtime 6.11.2 -- Qt compiled 6.11.2
+rootdir: /home/kalebtangen/Projects/Karios/Kairos
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1, qt-4.5.0, cov-7.1.0
+collecting ... collected 474 items
+
+tests/client/test_add_server_dialog.py::test_accept_fetches_and_stores_display_name PASSED [  0%]
+tests/client/test_add_server_dialog.py::test_accept_shows_error_when_unreachable PASSED [  0%]
+tests/client/test_add_server_dialog.py::test_blank_host_is_rejected PASSED [  0%]
+tests/client/test_api_client.py::test_me_reports_the_current_role PASSED [  0%]
+tests/client/test_api_client.py::test_teams_round_trip PASSED            [  1%]
+tests/client/test_api_client.py::test_a_refusal_carries_the_servers_message_and_status PASSED [  1%]
+tests/client/test_api_client.py::test_an_admin_cannot_change_their_own_role PASSED [  1%]
+tests/client/test_api_client.py::test_error_message_reports_a_validation_failure_on_a_specific_field PASSED [  1%]
+tests/client/test_api_client.py::test_error_message_does_not_crash_on_an_empty_loc PASSED [  1%]
+tests/client/test_api_client.py::test_error_message_falls_back_when_the_body_is_not_json PASSED [  2%]
+tests/client/test_api_client.py::test_an_unreachable_server_is_a_connection_error PASSED [  2%]
+tests/client/test_api_client.py::test_test_messages_are_sent_as_the_signed_in_user PASSED [  2%]
+tests/client/test_app_shell.py::test_defaults_to_dashboard_and_switches_to_chat PASSED [  2%]
+tests/client/test_app_shell.py::test_switch_account_button_invokes_callback PASSED [  2%]
+tests/client/test_app_shell.py::test_non_admin_does_not_get_server_settings_nav PASSED [  3%]
+tests/client/test_app_shell.py::test_admin_gets_server_settings_nav PASSED [  3%]
+tests/client/test_app_shell.py::test_teams_and_users_load_only_when_opened PASSED [  3%]
+tests/client/test_app_shell.py::test_the_timer_reloads_only_the_page_showing PASSED [  3%]
+tests/client/test_auth_dialog.py::test_login_success_enters_verify_step PASSED [  4%]
+tests/client/test_auth_dialog.py::test_login_without_2fa_accepts_dialog_immediately PASSED [  4%]
+tests/client/test_auth_dialog.py::test_login_wrong_password_shows_error PASSED [  4%]
+tests/client/test_auth_dialog.py::test_signup_success_accepts_dialog PASSED [  4%]
+tests/client/test_auth_dialog.py::test_signup_sends_the_2fa_checkbox_choice PASSED [  4%]
+tests/client/test_auth_dialog.py::test_signup_duplicate_email_shows_error PASSED [  5%]
+tests/client/test_auth_dialog.py::test_correct_code_accepts_dialog PASSED [  5%]
+tests/client/test_auth_dialog.py::test_wrong_code_shows_error_and_stays_on_verify_page PASSED [  5%]
+tests/client/test_auth_dialog.py::test_resend_code_shows_confirmation PASSED [  5%]
+tests/client/test_background.py::test_the_call_runs_off_the_main_thread_and_the_result_arrives_on_it PASSED [  5%]
+tests/client/test_background.py::test_an_api_error_arrives_as_its_message PASSED [  6%]
+tests/client/test_background.py::test_an_unexpected_error_is_reported_not_lost PASSED [  6%]
+tests/client/test_background.py::test_results_for_a_closed_screen_are_dropped PASSED [  6%]
+tests/client/test_background.py::test_wait_until_idle_reports_a_call_that_is_still_running PASSED [  6%]
+tests/client/test_background.py::test_whatever_a_call_captures_is_released_on_the_main_thread PASSED [  6%]
+tests/client/test_background.py::test_garbage_collection_during_requests_does_not_crash PASSED [  7%]
+tests/client/test_chat_page.py::test_loads_conversations_on_init PASSED  [  7%]
+tests/client/test_chat_page.py::test_empty_state_message PASSED          [  7%]
+tests/client/test_chat_page.py::test_selecting_a_conversation_shows_it_inline_no_popup PASSED [  7%]
+tests/client/test_chat_page.py::test_new_chat_flow_selects_the_new_conversation PASSED [  8%]
+tests/client/test_chat_page.py::test_new_group_flow_selects_the_new_conversation PASSED [  8%]
+tests/client/test_chat_thread_panel.py::test_shows_empty_state_before_any_selection PASSED [  8%]
+tests/client/test_chat_thread_panel.py::test_show_conversation_loads_history_and_switches_page PASSED [  8%]
+tests/client/test_chat_thread_panel.py::test_sending_a_message_appends_it_and_clears_input PASSED [  8%]
+tests/client/test_chat_thread_panel.py::test_switching_conversation_resets_cursor_and_history PASSED [  9%]
+tests/client/test_chat_thread_panel.py::test_same_timer_is_reused_across_conversation_switches PASSED [  9%]
+tests/client/test_chat_thread_panel.py::test_manage_members_button_only_shown_for_group_conversations PASSED [  9%]
+tests/client/test_chat_viewmodel.py::test_fetch_new_messages_advances_cursor PASSED [  9%]
+tests/client/test_chat_viewmodel.py::test_sender_label_returns_you_for_current_user PASSED [  9%]
+tests/client/test_chat_viewmodel.py::test_sender_label_resolves_and_caches_other_user PASSED [ 10%]
+tests/client/test_chat_viewmodel.py::test_send_text_delegates_to_api_client PASSED [ 10%]
+tests/client/test_chat_viewmodel.py::test_send_attachment_and_download_delegate_to_api_client PASSED [ 10%]
+tests/client/test_connect_window.py::test_connection_failure_disables_sign_in PASSED [ 10%]
+tests/client/test_connect_window.py::test_connecting_with_no_cached_identity_auto_opens_sign_in PASSED [ 10%]
+tests/client/test_connect_window.py::test_signing_in_enters_app_shell PASSED [ 11%]
+tests/client/test_connect_window.py::test_cached_identity_auto_enters_app_shell_on_reconnect PASSED [ 11%]
+tests/client/test_connect_window.py::test_switch_account_returns_to_connect_window PASSED [ 11%]
+tests/client/test_connect_window.py::test_admin_role_grants_server_settings_nav PASSED [ 11%]
+tests/client/test_connect_window.py::test_profile_lookup_failure_defaults_to_non_admin PASSED [ 12%]
+tests/client/test_connect_window.py::test_empty_sections_show_placeholder_text PASSED [ 12%]
+tests/client/test_connect_window.py::test_discovered_server_renders_a_tile PASSED [ 12%]
+tests/client/test_connect_window.py::test_clicking_discovered_tile_auto_saves_and_connects PASSED [ 12%]
+tests/client/test_connect_window.py::test_clicking_discovered_tile_twice_does_not_duplicate_saved_entry PASSED [ 12%]
+tests/client/test_connect_window.py::test_remove_saved_server_clears_it PASSED [ 13%]
+tests/client/test_connect_window.py::test_closing_window_stops_discovery_listener PASSED [ 13%]
+tests/client/test_conversation_list_viewmodel.py::test_group_conversation_label_shows_name_and_member_count PASSED [ 13%]
+tests/client/test_conversation_list_viewmodel.py::test_direct_conversation_label_shows_other_persons_name PASSED [ 13%]
+tests/client/test_conversation_list_viewmodel.py::test_direct_conversation_falls_back_when_person_lookup_fails PASSED [ 13%]
+tests/client/test_dashboard_page.py::test_dashboard_starts_with_empty_state_panels PASSED [ 14%]
+tests/client/test_dashboard_page.py::test_set_items_replaces_empty_state PASSED [ 14%]
+tests/client/test_dashboard_page.py::test_set_items_empty_list_restores_empty_state PASSED [ 14%]
+tests/client/test_dashboard_page.py::test_stat_tile_set_value PASSED     [ 14%]
+tests/client/test_dashboard_page.py::test_dashboard_has_a_clock PASSED   [ 14%]
+tests/client/test_dashboard_page.py::test_clock_refreshes_on_timer_tick PASSED [ 15%]
+tests/client/test_discovery_integration.py::test_real_udp_packet_is_received_by_listener PASSED [ 15%]
+tests/client/test_discovery_listener.py::test_handle_datagram_emits_server_discovered PASSED [ 15%]
+tests/client/test_discovery_listener.py::test_repeated_announces_update_in_place_without_reemitting PASSED [ 15%]
+tests/client/test_discovery_listener.py::test_malformed_datagram_is_ignored PASSED [ 16%]
+tests/client/test_discovery_listener.py::test_stale_entry_is_swept_and_emits_server_lost PASSED [ 16%]
+tests/client/test_discovery_listener.py::test_fresh_entry_is_not_swept PASSED [ 16%]
+tests/client/test_discovery_listener.py::test_stop_clears_known_servers PASSED [ 16%]
+tests/client/test_guards.py::test_a_team_name_that_is_too_long_is_caught_before_sending PASSED [ 16%]
+tests/client/test_guards.py::test_renaming_to_a_blank_name_is_caught_before_sending PASSED [ 17%]
+tests/client/test_guards.py::test_selecting_the_team_already_shown_sends_nothing PASSED [ 17%]
+tests/client/test_guards.py::test_team_actions_with_no_team_selected_send_nothing[rename] PASSED [ 17%]
+tests/client/test_guards.py::test_team_actions_with_no_team_selected_send_nothing[delete] PASSED [ 17%]
+tests/client/test_guards.py::test_team_actions_with_no_team_selected_send_nothing[add] PASSED [ 17%]
+tests/client/test_guards.py::test_team_actions_with_no_team_selected_send_nothing[remove] PASSED [ 18%]
+tests/client/test_guards.py::test_team_actions_with_no_team_selected_send_nothing[make-lead] PASSED [ 18%]
+tests/client/test_guards.py::test_team_actions_with_no_team_selected_send_nothing[leave] PASSED [ 18%]
+tests/client/test_guards.py::test_remove_and_make_lead_buttons_do_nothing_with_no_member_selected PASSED [ 18%]
+tests/client/test_guards.py::test_picking_the_role_someone_already_has_sends_nothing PASSED [ 18%]
+tests/client/test_guards.py::test_a_role_change_while_loading_is_not_sent_twice PASSED [ 19%]
+tests/client/test_guards.py::test_the_users_screen_leaves_connection_errors_to_the_banner PASSED [ 19%]
+tests/client/test_guards.py::test_a_result_nobody_is_waiting_for_is_ignored PASSED [ 19%]
+tests/client/test_identity_viewmodel.py::test_set_and_reload_cached_identity PASSED [ 19%]
+tests/client/test_identity_viewmodel.py::test_no_cached_identity_for_unknown_server PASSED [ 20%]
+tests/client/test_identity_viewmodel.py::test_identities_are_scoped_per_server PASSED [ 20%]
+tests/client/test_identity_viewmodel.py::test_clear_erases_cached_identity_for_that_server PASSED [ 20%]
+tests/client/test_main_thread_gc.py::test_automatic_collection_is_off_while_it_runs_and_back_afterwards PASSED [ 20%]
+tests/client/test_main_thread_gc.py::test_a_worker_thread_never_destroys_qt_objects PASSED [ 20%]
+tests/client/test_main_thread_gc.py::test_nothing_is_collected_until_it_is_due PASSED [ 21%]
+tests/client/test_main_thread_gc.py::test_the_timer_collects_on_its_own PASSED [ 21%]
+tests/client/test_manage_members_dialog.py::test_non_admin_sees_no_action_buttons PASSED [ 21%]
+tests/client/test_manage_members_dialog.py::test_admin_can_promote_and_remove_others PASSED [ 21%]
+tests/client/test_manage_members_dialog.py::test_admin_cannot_target_themselves_in_row_buttons PASSED [ 21%]
+tests/client/test_manage_members_dialog.py::test_last_admin_removal_shows_friendly_error PASSED [ 22%]
+tests/client/test_manage_members_dialog.py::test_add_member_flow PASSED  [ 22%]
+tests/client/test_new_chat_dialog.py::test_search_excludes_self_and_accept_selects_person PASSED [ 22%]
+tests/client/test_new_chat_dialog.py::test_accept_without_selection_shows_error PASSED [ 22%]
+tests/client/test_new_group_dialog.py::test_checking_people_updates_selected_label PASSED [ 22%]
+tests/client/test_new_group_dialog.py::test_selection_persists_across_new_searches PASSED [ 23%]
+tests/client/test_new_group_dialog.py::test_accept_requires_name_and_at_least_one_member PASSED [ 23%]
+tests/client/test_plain_text_display.py::test_the_server_window_shows_network_messages_as_plain_text PASSED [ 23%]
+tests/client/test_plain_text_display.py::test_labels_showing_user_data_are_plain_text[ErrorLabel] PASSED [ 23%]
+tests/client/test_plain_text_display.py::test_labels_showing_user_data_are_plain_text[ElidedLabel] PASSED [ 24%]
+tests/client/test_rare_paths.py::test_an_error_page_that_is_not_json_still_gives_a_message PASSED [ 24%]
+tests/client/test_rare_paths.py::test_an_empty_validation_error_list_still_gives_a_message PASSED [ 24%]
+tests/client/test_rare_paths.py::test_the_app_starts_with_main_thread_collection_and_a_window PASSED [ 24%]
+tests/client/test_rare_paths.py::test_a_result_finishing_during_shutdown_is_dropped PASSED [ 24%]
+tests/client/test_rare_paths.py::test_a_result_with_no_dispatcher_yet_is_dropped PASSED [ 25%]
+tests/client/test_rare_paths.py::test_waiting_also_covers_requests_started_by_a_result PASSED [ 25%]
+tests/client/test_rare_paths.py::test_waiting_works_without_a_qt_application PASSED [ 25%]
+tests/client/test_rare_paths.py::test_saying_no_to_a_confirmation_sends_nothing[lead] PASSED [ 25%]
+tests/client/test_rare_paths.py::test_saying_no_to_a_confirmation_sends_nothing[delete] PASSED [ 25%]
+tests/client/test_rare_paths.py::test_saying_no_to_a_confirmation_sends_nothing[leave] PASSED [ 26%]
+tests/client/test_rare_paths.py::test_the_yes_no_dialog_returns_the_answer[16384-True] PASSED [ 26%]
+tests/client/test_rare_paths.py::test_the_yes_no_dialog_returns_the_answer[65536-False] PASSED [ 26%]
+tests/client/test_server_list_viewmodel.py::test_add_and_persist_known_server PASSED [ 26%]
+tests/client/test_server_list_viewmodel.py::test_nickname_overrides_display_name_in_label PASSED [ 27%]
+tests/client/test_server_list_viewmodel.py::test_mark_connected_sets_last_used PASSED [ 27%]
+tests/client/test_server_list_viewmodel.py::test_remove_server_clears_last_used PASSED [ 27%]
+tests/client/test_server_list_viewmodel.py::test_base_url_uses_https PASSED [ 27%]
+tests/client/test_server_list_viewmodel.py::test_update_cert_pem_persists PASSED [ 27%]
+tests/client/test_server_settings_page.py::test_loads_current_display_name_and_max_size PASSED [ 28%]
+tests/client/test_server_settings_page.py::test_blank_upload_root_sends_none PASSED [ 28%]
+tests/client/test_server_settings_page.py::test_setting_upload_root_sends_it PASSED [ 28%]
+tests/client/test_server_settings_page.py::test_non_numeric_max_size_shows_error PASSED [ 28%]
+tests/client/test_server_settings_page.py::test_forbidden_shows_friendly_error PASSED [ 28%]
+tests/client/test_server_tile.py::test_click_invokes_callback PASSED     [ 29%]
+tests/client/test_server_tile.py::test_discovered_tile_has_no_remove_button PASSED [ 29%]
+tests/client/test_server_tile.py::test_saved_tile_remove_button_invokes_callback_not_click PASSED [ 29%]
+tests/client/test_teams_screen.py::test_the_app_has_a_teams_page_next_to_dashboard_and_chat PASSED [ 29%]
+tests/client/test_teams_screen.py::test_a_new_member_sees_an_empty_state_and_no_create_box PASSED [ 29%]
+tests/client/test_teams_screen.py::test_leads_and_admins_can_create_a_team[project_lead] PASSED [ 30%]
+tests/client/test_teams_screen.py::test_leads_and_admins_can_create_a_team[admin] PASSED [ 30%]
+tests/client/test_teams_screen.py::test_a_blank_team_name_is_caught_without_contacting_the_server PASSED [ 30%]
+tests/client/test_teams_screen.py::test_a_duplicate_team_name_shows_the_servers_answer PASSED [ 30%]
+tests/client/test_teams_screen.py::test_a_double_click_creates_only_one_team PASSED [ 31%]
+tests/client/test_teams_screen.py::test_the_lead_adds_a_member_by_email PASSED [ 31%]
+tests/client/test_teams_screen.py::test_adding_a_bad_email_explains_why[-Enter the email of the person to add.] PASSED [ 31%]
+tests/client/test_teams_screen.py::test_adding_a_bad_email_explains_why[not-an-email-That doesn't look like an email address.] PASSED [ 31%]
+tests/client/test_teams_screen.py::test_adding_a_bad_email_explains_why[ghost@example.com-No user has that email] PASSED [ 31%]
+tests/client/test_teams_screen.py::test_adding_someone_already_on_the_team PASSED [ 32%]
+tests/client/test_teams_screen.py::test_the_lead_removes_a_member_after_confirming PASSED [ 32%]
+tests/client/test_teams_screen.py::test_saying_no_keeps_the_member PASSED [ 32%]
+tests/client/test_teams_screen.py::test_the_lead_row_cannot_be_removed_or_made_lead PASSED [ 32%]
+tests/client/test_teams_screen.py::test_handing_over_the_lead_swaps_who_sees_the_controls PASSED [ 32%]
+tests/client/test_teams_screen.py::test_the_lead_renames_the_team PASSED [ 33%]
+tests/client/test_teams_screen.py::test_the_lead_deletes_the_team_after_confirming PASSED [ 33%]
+tests/client/test_teams_screen.py::test_a_plain_member_sees_members_but_no_management PASSED [ 33%]
+tests/client/test_teams_screen.py::test_the_lead_cannot_leave_without_handing_over PASSED [ 33%]
+tests/client/test_teams_screen.py::test_a_member_leaves_and_the_team_disappears PASSED [ 33%]
+tests/client/test_teams_screen.py::test_someone_not_on_the_team_doesnt_see_it PASSED [ 34%]
+tests/client/test_teams_screen.py::test_an_admin_sees_and_manages_every_team PASSED [ 34%]
+tests/client/test_teams_screen.py::test_a_promotion_shows_up_after_refresh PASSED [ 34%]
+tests/client/test_teams_screen.py::test_a_server_refusal_is_shown_even_if_the_screen_was_stale PASSED [ 34%]
+tests/client/test_teams_screen.py::test_only_admins_get_a_users_tab PASSED [ 35%]
+tests/client/test_teams_screen.py::test_the_users_tab_lists_people_with_their_roles PASSED [ 35%]
+tests/client/test_teams_screen.py::test_an_admin_promotes_someone_after_confirming PASSED [ 35%]
+tests/client/test_teams_screen.py::test_cancelling_a_role_change_puts_it_back PASSED [ 35%]
+tests/client/test_teams_screen.py::test_a_refused_role_change_snaps_back_with_the_reason PASSED [ 35%]
+tests/client/test_teams_screen.py::test_users_screen_shows_names_as_plain_text PASSED [ 36%]
+tests/client/test_teams_screen.py::test_the_teams_list_uses_the_api_shape PASSED [ 36%]
+tests/client/test_theme_manager.py::test_defaults_to_auto PASSED         [ 36%]
+tests/client/test_theme_manager.py::test_set_mode_persists PASSED        [ 36%]
+tests/client/test_theme_manager.py::test_set_mode_rejects_invalid_value PASSED [ 36%]
+tests/client/test_theme_manager.py::test_resolve_effective_scheme_explicit_modes PASSED [ 37%]
+tests/client/test_theme_manager.py::test_resolve_effective_scheme_auto_follows_system PASSED [ 37%]
+tests/client/test_theme_manager.py::test_apply_sets_global_stylesheet PASSED [ 37%]
+tests/client/test_theme_manager.py::test_theme_changed_signal_emits_resolved_scheme PASSED [ 37%]
+tests/client/test_theme_selector.py::test_initial_selection_matches_current_mode PASSED [ 37%]
+tests/client/test_theme_selector.py::test_changing_selection_updates_theme_manager PASSED [ 38%]
+tests/client/test_ui_polish.py::test_error_text_is_readable_on_the_theme[#1e1e1e-#ff6b6b] PASSED [ 38%]
+tests/client/test_ui_polish.py::test_error_text_is_readable_on_the_theme[#2d2d2d-#ff6b6b] PASSED [ 38%]
+tests/client/test_ui_polish.py::test_error_text_is_readable_on_the_theme[#f0f0f0-#c0392b] PASSED [ 38%]
+tests/client/test_ui_polish.py::test_error_text_is_readable_on_the_theme[#efefef-#c0392b] PASSED [ 39%]
+tests/client/test_ui_polish.py::test_the_old_red_really_was_unreadable_on_dark PASSED [ 39%]
+tests/client/test_ui_polish.py::test_the_error_colour_follows_a_theme_switch PASSED [ 39%]
+tests/client/test_ui_polish.py::test_a_long_name_is_shortened_not_stretching_its_column PASSED [ 39%]
+tests/client/test_ui_polish.py::test_widening_reveals_more_of_a_long_name PASSED [ 39%]
+tests/server/test_attachments.py::test_upload_and_download_roundtrip PASSED [ 40%]
+tests/server/test_attachments.py::test_stored_file_on_disk_is_encrypted_not_plaintext PASSED [ 40%]
+tests/server/test_attachments.py::test_upload_rejects_path_traversal_filename PASSED [ 40%]
+tests/server/test_attachments.py::test_upload_rejects_oversized_file PASSED [ 40%]
+tests/server/test_attachments.py::test_download_denied_for_non_participant PASSED [ 40%]
+tests/server/test_auth.py::test_signup_issues_a_session_immediately PASSED [ 41%]
+tests/server/test_auth.py::test_signup_defaults_to_2fa_disabled PASSED   [ 41%]
+tests/server/test_auth.py::test_signup_can_opt_into_2fa PASSED           [ 41%]
+tests/server/test_auth.py::test_signup_rejects_duplicate_email PASSED    [ 41%]
+tests/server/test_auth.py::test_signup_rejects_short_password PASSED     [ 41%]
+tests/server/test_auth.py::test_signup_issued_token_works_immediately PASSED [ 42%]
+tests/server/test_auth.py::test_login_without_2fa_issues_a_session_immediately PASSED [ 42%]
+tests/server/test_auth.py::test_login_fails_with_wrong_password PASSED   [ 42%]
+tests/server/test_auth.py::test_login_fails_for_unknown_email PASSED     [ 42%]
+tests/server/test_auth.py::test_repeated_failed_logins_trigger_a_cooldown PASSED [ 43%]
+tests/server/test_auth.py::test_logout_invalidates_the_token PASSED      [ 43%]
+tests/server/test_auth.py::test_login_with_2fa_sends_a_code_and_withholds_the_session PASSED [ 43%]
+tests/server/test_auth.py::test_login_with_2fa_succeeds_after_code_verified PASSED [ 43%]
+tests/server/test_auth.py::test_login_with_2fa_issues_a_usable_session_token PASSED [ 43%]
+tests/server/test_auth.py::test_login_with_2fa_right_after_login_hits_resend_cooldown_cleanly PASSED [ 44%]
+tests/server/test_auth.py::test_login_with_2fa_returns_a_clean_503_when_email_sending_fails PASSED [ 44%]
+tests/server/test_auth.py::test_verify_code_rejects_wrong_code PASSED    [ 44%]
+tests/server/test_auth.py::test_verify_code_rejects_unknown_pending_token PASSED [ 44%]
+tests/server/test_auth.py::test_resend_code_rejects_rapid_repeat PASSED  [ 44%]
+tests/server/test_auth.py::test_resend_code_issues_a_new_code PASSED     [ 45%]
+tests/server/test_authorization.py::test_a_member_is_forbidden_from_an_admin_route PASSED [ 45%]
+tests/server/test_authorization.py::test_an_admin_may_call_an_admin_route PASSED [ 45%]
+tests/server/test_authorization.py::test_a_project_lead_is_forbidden_from_an_admin_route PASSED [ 45%]
+tests/server/test_authorization.py::test_an_anonymous_caller_gets_401_not_403 PASSED [ 45%]
+tests/server/test_authorization.py::test_a_invalid_token_gets_401_not_403 PASSED [ 46%]
+tests/server/test_authorization.py::test_a_role_change_applies_to_an_existing_token PASSED [ 46%]
+tests/server/test_authorization.py::test_demoting_an_admin_takes_effect_immediately PASSED [ 46%]
+tests/server/test_chat_messages.py::test_cursor_pagination_returns_only_messages_after_given_id PASSED [ 46%]
+tests/server/test_chat_messages.py::test_duplicate_client_token_is_idempotent PASSED [ 47%]
+tests/server/test_chat_messages.py::test_non_participant_cannot_read_or_post_messages PASSED [ 47%]
+tests/server/test_chat_messages.py::test_message_body_is_encrypted_at_rest PASSED [ 47%]
+tests/server/test_chat_messages.py::test_empty_body_is_rejected PASSED   [ 47%]
+tests/server/test_chat_ws.py::test_websocket_receives_broadcast_on_new_message PASSED [ 47%]
+tests/server/test_chat_ws.py::test_non_participant_does_not_receive_other_conversations_messages PASSED [ 48%]
+tests/server/test_chat_ws.py::test_websocket_rejects_unknown_token PASSED [ 48%]
+tests/server/test_concurrency.py::test_handing_over_the_lead_while_removing_that_person PASSED [ 48%]
+tests/server/test_concurrency.py::test_two_admins_demoting_each_other_always_leave_one PASSED [ 48%]
+tests/server/test_concurrency.py::test_deleting_a_team_while_members_are_added PASSED [ 48%]
+tests/server/test_concurrency.py::test_many_simultaneous_writers_never_get_database_is_locked PASSED [ 49%]
+tests/server/test_concurrency.py::test_many_simultaneous_logins_all_succeed PASSED [ 49%]
+tests/server/test_concurrency.py::test_reads_are_not_held_up_by_the_write_lock PASSED [ 49%]
+tests/server/test_concurrency.py::test_the_database_runs_in_wal_mode_with_a_long_busy_timeout PASSED [ 49%]
+tests/server/test_concurrency.py::test_many_simultaneous_sign_ups_all_succeed PASSED [ 50%]
+tests/server/test_conversations.py::test_create_direct_conversation_between_two_users PASSED [ 50%]
+tests/server/test_conversations.py::test_create_direct_conversation_is_idempotent_for_same_pair PASSED [ 50%]
+tests/server/test_conversations.py::test_create_group_conversation_makes_creator_admin PASSED [ 50%]
+tests/server/test_conversations.py::test_group_chat_requires_admin_to_add_member PASSED [ 50%]
+tests/server/test_conversations.py::test_cannot_remove_or_demote_last_admin PASSED [ 51%]
+tests/server/test_conversations.py::test_non_admin_member_can_remove_themself_to_leave PASSED [ 51%]
+tests/server/test_conversations.py::test_non_admin_member_still_cannot_remove_someone_else PASSED [ 51%]
+tests/server/test_conversations.py::test_non_participant_cannot_read_conversation PASSED [ 51%]
+tests/server/test_conversations.py::test_unknown_session_token_is_rejected PASSED [ 51%]
+tests/server/test_conversations.py::test_missing_auth_header_is_rejected PASSED [ 52%]
+tests/server/test_crypto.py::test_encrypt_text_round_trips_and_is_not_plaintext PASSED [ 52%]
+tests/server/test_crypto.py::test_chunked_stream_round_trips_and_is_not_plaintext PASSED [ 52%]
+tests/server/test_crypto.py::test_different_files_never_reuse_a_nonce_under_the_same_key PASSED [ 52%]
+tests/server/test_crypto.py::test_decrypt_fails_with_the_wrong_key PASSED [ 52%]
+tests/server/test_crypto.py::test_get_or_create_key_is_idempotent PASSED [ 53%]
+tests/server/test_discovery_announcer.py::test_start_sends_an_immediate_announcement PASSED [ 53%]
+tests/server/test_discovery_announcer.py::test_announce_reflects_current_display_name_each_tick PASSED [ 53%]
+tests/server/test_discovery_announcer.py::test_same_instance_id_across_multiple_announces PASSED [ 53%]
+tests/server/test_discovery_announcer.py::test_stop_prevents_further_announces PASSED [ 54%]
+tests/server/test_edge_cases.py::test_get_db_outside_a_request_gives_an_ordinary_session PASSED [ 54%]
+tests/server/test_edge_cases.py::test_two_teams_racing_for_one_name_report_it_as_taken PASSED [ 54%]
+tests/server/test_edge_cases.py::test_a_duplicate_membership_refused_by_the_database_is_reported_as_a_member PASSED [ 54%]
+tests/server/test_edge_cases.py::test_a_team_deleted_by_someone_else_mid_request_is_not_found PASSED [ 54%]
+tests/server/test_edge_cases.py::test_loopback_check_rejects_a_missing_address PASSED [ 55%]
+tests/server/test_edge_cases.py::test_an_oversized_body_after_the_reply_started_is_not_answered_twice PASSED [ 55%]
+tests/server/test_edge_cases.py::test_a_streamed_body_that_grows_too_large_gets_a_413 PASSED [ 55%]
+tests/server/test_edge_cases.py::test_a_client_disconnecting_is_passed_through_untouched PASSED [ 55%]
+tests/server/test_email_sender.py::test_raises_when_smtp_env_vars_are_missing PASSED [ 55%]
+tests/server/test_email_sender.py::test_sends_via_smtp_ssl_with_the_configured_credentials PASSED [ 56%]
+tests/server/test_gui.py::test_a_port_in_use_is_skipped PASSED           [ 56%]
+tests/server/test_gui.py::test_a_free_port_is_returned_as_is PASSED      [ 56%]
+tests/server/test_gui.py::test_the_window_starts_on_the_next_port_when_the_first_is_taken PASSED [ 56%]
+tests/server/test_gui.py::test_a_failed_start_is_reported_not_shown_as_running PASSED [ 56%]
+tests/server/test_gui.py::test_the_window_says_starting_until_the_server_is_listening PASSED [ 57%]
+tests/server/test_gui.py::test_start_then_stop PASSED                    [ 57%]
+tests/server/test_gui.py::test_the_address_line_wraps_and_can_be_copied PASSED [ 57%]
+tests/server/test_gui.py::test_the_server_does_not_trust_forwarded_headers PASSED [ 57%]
+tests/server/test_gui.py::test_no_free_port_in_the_range_is_an_error PASSED [ 58%]
+tests/server/test_gui.py::test_the_window_reports_when_no_port_is_free PASSED [ 58%]
+tests/server/test_gui.py::test_a_startup_check_with_no_server_just_stops PASSED [ 58%]
+tests/server/test_gui.py::test_the_server_app_starts_a_window PASSED     [ 58%]
+tests/server/test_gui.py::test_while_the_server_is_still_starting_the_check_keeps_waiting PASSED [ 58%]
+tests/server/test_gui.py::test_each_message_is_logged_once PASSED        [ 59%]
+tests/server/test_health.py::test_health PASSED                          [ 59%]
+tests/server/test_messages.py::test_sending_requires_login PASSED        [ 59%]
+tests/server/test_messages.py::test_reading_requires_login PASSED        [ 59%]
+tests/server/test_messages.py::test_an_invalid_token_cannot_read_or_send PASSED [ 59%]
+tests/server/test_messages.py::test_the_sender_is_the_signed_in_user PASSED [ 60%]
+tests/server/test_messages.py::test_a_sender_in_the_body_is_ignored PASSED [ 60%]
+tests/server/test_messages.py::test_each_user_posts_under_their_own_name PASSED [ 60%]
+tests/server/test_messages.py::test_send_and_list_message PASSED         [ 60%]
+tests/server/test_messages.py::test_messages_are_listed_newest_first PASSED [ 60%]
+tests/server/test_messages.py::test_surrounding_whitespace_is_stripped PASSED [ 61%]
+tests/server/test_messages.py::test_html_is_stored_as_plain_text PASSED  [ 61%]
+tests/server/test_messages.py::test_empty_or_missing_content_is_rejected[empty-content] PASSED [ 61%]
+tests/server/test_messages.py::test_empty_or_missing_content_is_rejected[blank-content] PASSED [ 61%]
+tests/server/test_messages.py::test_empty_or_missing_content_is_rejected[no-content] PASSED [ 62%]
+tests/server/test_messages.py::test_content_at_the_limit_is_accepted PASSED [ 62%]
+tests/server/test_messages.py::test_content_over_the_limit_is_rejected PASSED [ 62%]
+tests/server/test_messages.py::test_rejected_messages_are_not_stored PASSED [ 62%]
+tests/server/test_messages.py::test_limit_caps_the_number_returned PASSED [ 62%]
+tests/server/test_messages.py::test_out_of_range_limit_is_rejected[0] PASSED [ 63%]
+tests/server/test_messages.py::test_out_of_range_limit_is_rejected[-1] PASSED [ 63%]
+tests/server/test_messages.py::test_out_of_range_limit_is_rejected[201] PASSED [ 63%]
+tests/server/test_messages.py::test_out_of_range_limit_is_rejected[10000000] PASSED [ 63%]
+tests/server/test_messages.py::test_non_numeric_limit_is_rejected PASSED [ 63%]
+tests/server/test_messages.py::test_max_limit_is_accepted PASSED         [ 64%]
+tests/server/test_people.py::test_search_finds_user_by_partial_name PASSED [ 64%]
+tests/server/test_people.py::test_search_finds_user_by_partial_email PASSED [ 64%]
+tests/server/test_people.py::test_blank_query_returns_no_results PASSED  [ 64%]
+tests/server/test_people.py::test_get_person_by_id PASSED                [ 64%]
+tests/server/test_people.py::test_get_person_404_for_unknown_id PASSED   [ 65%]
+tests/server/test_people.py::test_get_my_profile_includes_role PASSED    [ 65%]
+tests/server/test_people.py::test_get_my_profile_requires_auth PASSED    [ 65%]
+tests/server/test_people.py::test_me_route_is_not_swallowed_by_user_id_route PASSED [ 65%]
+tests/server/test_security.py::test_a_body_over_the_limit_is_refused_by_its_declared_length PASSED [ 66%]
+tests/server/test_security.py::test_a_streamed_body_without_a_length_is_cut_off PASSED [ 66%]
+tests/server/test_security.py::test_a_body_just_under_the_limit_is_still_processed PASSED [ 66%]
+tests/server/test_security.py::test_a_bogus_content_length_is_rejected PASSED [ 66%]
+tests/server/test_security.py::test_only_the_attachment_upload_route_skips_the_size_limit PASSED [ 66%]
+tests/server/test_security.py::test_ids_beyond_64_bits_are_rejected_not_crashed[9223372036854775808] PASSED [ 67%]
+tests/server/test_security.py::test_ids_beyond_64_bits_are_rejected_not_crashed[99999999999999999999] PASSED [ 67%]
+tests/server/test_security.py::test_the_largest_64_bit_id_is_just_not_found PASSED [ 67%]
+tests/server/test_security.py::test_team_names_are_cleaned PASSED        [ 67%]
+tests/server/test_security.py::test_cleaning_leaves_non_text_alone_for_validation_to_reject[None] PASSED [ 67%]
+tests/server/test_security.py::test_cleaning_leaves_non_text_alone_for_validation_to_reject[5] PASSED [ 68%]
+tests/server/test_security.py::test_cleaning_leaves_non_text_alone_for_validation_to_reject[value2] PASSED [ 68%]
+tests/server/test_security.py::test_cleaning_leaves_non_text_alone_for_validation_to_reject[value3] PASSED [ 68%]
+tests/server/test_security.py::test_a_non_text_team_name_is_a_422_not_a_crash PASSED [ 68%]
+tests/server/test_security.py::test_docs_are_hidden_from_other_computers[/docs] PASSED [ 68%]
+tests/server/test_security.py::test_docs_are_hidden_from_other_computers[/redoc] PASSED [ 69%]
+tests/server/test_security.py::test_docs_are_hidden_from_other_computers[/openapi.json] PASSED [ 69%]
+tests/server/test_security.py::test_docs_work_on_the_host_itself[127.0.0.1] PASSED [ 69%]
+tests/server/test_security.py::test_docs_work_on_the_host_itself[::1] PASSED [ 69%]
+tests/server/test_security.py::test_hiding_docs_does_not_affect_the_api PASSED [ 70%]
+tests/server/test_security.py::test_the_seed_script_has_no_password_option PASSED [ 70%]
+tests/server/test_security.py::test_the_seed_script_rejects_a_weak_password_from_the_environment PASSED [ 70%]
+tests/server/test_seed.py::test_creates_the_roles_and_an_admin PASSED    [ 70%]
+tests/server/test_seed.py::test_a_chosen_password_is_never_printed PASSED [ 70%]
+tests/server/test_seed.py::test_without_a_chosen_password_one_is_generated_and_shown_once PASSED [ 71%]
+tests/server/test_seed.py::test_the_defaults_come_from_the_environment PASSED [ 71%]
+tests/server/test_seed.py::test_running_twice_keeps_the_first_admin PASSED [ 71%]
+tests/server/test_seed.py::test_a_second_run_does_not_print_a_password_that_was_never_saved PASSED [ 71%]
+tests/server/test_seed.py::test_an_existing_non_admin_account_is_reported_not_promoted PASSED [ 71%]
+tests/server/test_seed.py::test_a_short_password_is_refused PASSED       [ 72%]
+tests/server/test_seed.py::test_an_unmigrated_database_gets_advice_not_a_traceback PASSED [ 72%]
+tests/server/test_seed.py::test_a_refused_account_is_reported_not_a_traceback PASSED [ 72%]
+tests/server/test_server_settings.py::test_get_server_info_is_public_no_auth_needed PASSED [ 72%]
+tests/server/test_server_settings.py::test_put_server_info_requires_global_admin_role PASSED [ 72%]
+tests/server/test_server_settings.py::test_put_server_info_rejects_unwritable_upload_root PASSED [ 73%]
+tests/server/test_server_settings.py::test_put_server_info_accepts_writable_upload_root PASSED [ 73%]
+tests/server/test_server_settings.py::test_put_server_info_rejects_empty_display_name PASSED [ 73%]
+tests/server/test_server_settings.py::test_put_server_info_accepts_positive_max_upload_size PASSED [ 73%]
+tests/server/test_server_settings.py::test_put_server_info_rejects_non_positive_max_upload_size PASSED [ 74%]
+tests/server/test_startup.py::test_startup_creates_roles_on_an_empty_database PASSED [ 74%]
+tests/server/test_startup.py::test_signup_works_on_a_freshly_migrated_database PASSED [ 74%]
+tests/server/test_startup.py::test_startup_is_idempotent PASSED          [ 74%]
+tests/server/test_startup.py::test_startup_on_an_unmigrated_database_says_how_to_fix_it PASSED [ 74%]
+tests/server/test_startup.py::test_app_engine_uses_the_configured_database PASSED [ 75%]
+tests/server/test_startup.py::test_database_path_is_absolute PASSED      [ 75%]
+tests/server/test_startup.py::test_alembic_runs_from_any_directory[repo-root] PASSED [ 75%]
+tests/server/test_startup.py::test_alembic_runs_from_any_directory[server/db] PASSED [ 75%]
+tests/server/test_startup.py::test_alembic_runs_from_any_directory[outside-repo] PASSED [ 75%]
+tests/server/test_startup.py::test_migrations_upgrade_downgrade_upgrade PASSED [ 76%]
+tests/server/test_teams.py::test_a_project_lead_creates_a_team_and_becomes_its_lead_and_member PASSED [ 76%]
+tests/server/test_teams.py::test_an_admin_can_create_a_team PASSED       [ 76%]
+tests/server/test_teams.py::test_a_plain_member_cannot_create_a_team PASSED [ 76%]
+tests/server/test_teams.py::test_the_team_name_is_trimmed PASSED         [ 77%]
+tests/server/test_teams.py::test_an_invalid_name_is_rejected[empty] PASSED [ 77%]
+tests/server/test_teams.py::test_an_invalid_name_is_rejected[blank] PASSED [ 77%]
+tests/server/test_teams.py::test_an_invalid_name_is_rejected[too-long] PASSED [ 77%]
+tests/server/test_teams.py::test_an_invalid_name_is_rejected[missing] PASSED [ 77%]
+tests/server/test_teams.py::test_a_name_at_the_length_limit_is_accepted PASSED [ 78%]
+tests/server/test_teams.py::test_a_duplicate_name_is_rejected_ignoring_case[Alpha] PASSED [ 78%]
+tests/server/test_teams.py::test_a_duplicate_name_is_rejected_ignoring_case[alpha] PASSED [ 78%]
+tests/server/test_teams.py::test_a_duplicate_name_is_rejected_ignoring_case[ALPHA] PASSED [ 78%]
+tests/server/test_teams.py::test_a_duplicate_name_is_rejected_ignoring_case[  Alpha ] PASSED [ 78%]
+tests/server/test_teams.py::test_the_database_itself_enforces_case_insensitive_names PASSED [ 79%]
+tests/server/test_teams.py::test_a_demoted_lead_cannot_create_teams_but_still_manages_their_own PASSED [ 79%]
+tests/server/test_teams.py::test_list_shows_only_my_teams PASSED         [ 79%]
+tests/server/test_teams.py::test_an_admin_lists_every_team PASSED        [ 79%]
+tests/server/test_teams.py::test_list_reports_the_lead_and_member_count PASSED [ 79%]
+tests/server/test_teams.py::test_a_user_with_no_teams_gets_an_empty_list PASSED [ 80%]
+tests/server/test_teams.py::test_a_member_can_view_the_team PASSED       [ 80%]
+tests/server/test_teams.py::test_members_never_expose_password_hashes PASSED [ 80%]
+tests/server/test_teams.py::test_an_admin_can_view_a_team_they_are_not_on PASSED [ 80%]
+tests/server/test_teams.py::test_a_non_member_sees_the_same_404_as_for_a_missing_team PASSED [ 81%]
+tests/server/test_teams.py::test_a_non_numeric_team_id_is_rejected PASSED [ 81%]
+tests/server/test_teams.py::test_the_lead_can_rename_the_team PASSED     [ 81%]
+tests/server/test_teams.py::test_an_admin_can_rename_any_team PASSED     [ 81%]
+tests/server/test_teams.py::test_a_plain_member_cannot_rename PASSED     [ 81%]
+tests/server/test_teams.py::test_a_project_lead_on_the_team_who_is_not_its_lead_cannot_rename PASSED [ 82%]
+tests/server/test_teams.py::test_a_project_lead_not_on_the_team_gets_404 PASSED [ 82%]
+tests/server/test_teams.py::test_renaming_to_another_teams_name_is_rejected PASSED [ 82%]
+tests/server/test_teams.py::test_a_team_can_change_the_case_of_its_own_name PASSED [ 82%]
+tests/server/test_teams.py::test_renaming_to_a_blank_name_is_rejected PASSED [ 82%]
+tests/server/test_teams.py::test_the_lead_can_delete_the_team_and_its_memberships_go_too PASSED [ 83%]
+tests/server/test_teams.py::test_an_admin_can_delete_any_team PASSED     [ 83%]
+tests/server/test_teams.py::test_a_plain_member_cannot_delete PASSED     [ 83%]
+tests/server/test_teams.py::test_a_non_member_cannot_delete PASSED       [ 83%]
+tests/server/test_teams.py::test_a_team_with_projects_cannot_be_deleted PASSED [ 83%]
+tests/server/test_teams.py::test_deleting_a_missing_team_is_404 PASSED   [ 84%]
+tests/server/test_teams.py::test_the_lead_adds_a_member_who_can_then_see_the_team PASSED [ 84%]
+tests/server/test_teams.py::test_an_admin_can_add_members_to_any_team PASSED [ 84%]
+tests/server/test_teams.py::test_adding_by_email_ignores_case_and_spaces PASSED [ 84%]
+tests/server/test_teams.py::test_adding_an_unknown_email_is_404 PASSED   [ 85%]
+tests/server/test_teams.py::test_adding_an_existing_member_is_409 PASSED [ 85%]
+tests/server/test_teams.py::test_a_plain_member_cannot_add_members PASSED [ 85%]
+tests/server/test_teams.py::test_a_non_manager_cannot_use_add_member_to_probe_emails PASSED [ 85%]
+tests/server/test_teams.py::test_a_non_member_cannot_add_members PASSED  [ 85%]
+tests/server/test_teams.py::test_adding_with_an_empty_email_is_422 PASSED [ 86%]
+tests/server/test_teams.py::test_the_lead_removes_a_member_who_then_loses_access PASSED [ 86%]
+tests/server/test_teams.py::test_a_member_can_leave PASSED               [ 86%]
+tests/server/test_teams.py::test_a_member_cannot_remove_someone_else PASSED [ 86%]
+tests/server/test_teams.py::test_the_lead_cannot_be_removed_even_by_an_admin PASSED [ 86%]
+tests/server/test_teams.py::test_removing_someone_not_on_the_team_is_404 PASSED [ 87%]
+tests/server/test_teams.py::test_a_non_member_cannot_remove_anyone PASSED [ 87%]
+tests/server/test_teams.py::test_handing_over_the_lead_moves_management_rights PASSED [ 87%]
+tests/server/test_teams.py::test_after_handing_over_the_old_lead_can_leave PASSED [ 87%]
+tests/server/test_teams.py::test_the_lead_cannot_go_to_a_non_member PASSED [ 87%]
+tests/server/test_teams.py::test_a_plain_member_cannot_take_the_lead PASSED [ 88%]
+tests/server/test_teams.py::test_an_admin_can_reassign_the_lead PASSED   [ 88%]
+tests/server/test_teams.py::test_making_the_current_lead_lead_again_changes_nothing PASSED [ 88%]
+tests/server/test_teams.py::test_every_team_route_requires_login[post-/teams-body0] PASSED [ 88%]
+tests/server/test_teams.py::test_every_team_route_requires_login[get-/teams-None] PASSED [ 89%]
+tests/server/test_teams.py::test_every_team_route_requires_login[get-/teams/1-None] PASSED [ 89%]
+tests/server/test_teams.py::test_every_team_route_requires_login[patch-/teams/1-body3] PASSED [ 89%]
+tests/server/test_teams.py::test_every_team_route_requires_login[delete-/teams/1-None] PASSED [ 89%]
+tests/server/test_teams.py::test_every_team_route_requires_login[post-/teams/1/members-body5] PASSED [ 89%]
+tests/server/test_teams.py::test_every_team_route_requires_login[delete-/teams/1/members/1-None] PASSED [ 90%]
+tests/server/test_teams.py::test_every_team_route_requires_login[put-/teams/1/lead-body7] PASSED [ 90%]
+tests/server/test_teams.py::test_the_name_index_exists_in_the_model_schema PASSED [ 90%]
+tests/server/test_tls.py::test_ensure_server_cert_creates_files_with_safe_permissions PASSED [ 90%]
+tests/server/test_tls.py::test_ensure_server_cert_is_idempotent PASSED   [ 90%]
+tests/server/test_tls.py::test_fingerprint_sha256_is_stable_and_formatted PASSED [ 91%]
+tests/server/test_tls.py::test_different_certs_have_different_fingerprints PASSED [ 91%]
+tests/server/test_users.py::test_an_admin_lists_every_user_sorted_by_name PASSED [ 91%]
+tests/server/test_users.py::test_the_list_never_includes_password_hashes PASSED [ 91%]
+tests/server/test_users.py::test_non_admins_cannot_list_users[lead] PASSED [ 91%]
+tests/server/test_users.py::test_non_admins_cannot_list_users[member] PASSED [ 92%]
+tests/server/test_users.py::test_listing_requires_login PASSED           [ 92%]
+tests/server/test_users.py::test_an_admin_promotes_a_member_to_project_lead PASSED [ 92%]
+tests/server/test_users.py::test_the_new_role_takes_effect_on_the_next_request PASSED [ 92%]
+tests/server/test_users.py::test_demotion_also_takes_effect_immediately PASSED [ 93%]
+tests/server/test_users.py::test_an_admin_can_make_another_admin_who_can_then_manage_roles PASSED [ 93%]
+tests/server/test_users.py::test_setting_the_same_role_again_is_harmless PASSED [ 93%]
+tests/server/test_users.py::test_an_admin_cannot_change_their_own_role[member] PASSED [ 93%]
+tests/server/test_users.py::test_an_admin_cannot_change_their_own_role[project_lead] PASSED [ 93%]
+tests/server/test_users.py::test_an_admin_cannot_change_their_own_role[admin] PASSED [ 94%]
+tests/server/test_users.py::test_the_last_admin_can_never_be_demoted PASSED [ 94%]
+tests/server/test_users.py::test_two_admins_can_demote_each_other_but_not_themselves PASSED [ 94%]
+tests/server/test_users.py::test_non_admins_cannot_change_roles[lead] PASSED [ 94%]
+tests/server/test_users.py::test_non_admins_cannot_change_roles[member] PASSED [ 94%]
+tests/server/test_users.py::test_unknown_roles_are_rejected[superuser] PASSED [ 95%]
+tests/server/test_users.py::test_unknown_roles_are_rejected[ADMIN] PASSED [ 95%]
+tests/server/test_users.py::test_unknown_roles_are_rejected[] PASSED     [ 95%]
+tests/server/test_users.py::test_unknown_roles_are_rejected[None] PASSED [ 95%]
+tests/server/test_users.py::test_unknown_roles_are_rejected[1] PASSED    [ 95%]
+tests/server/test_users.py::test_changing_a_missing_user_is_404 PASSED   [ 96%]
+tests/server/test_users.py::test_changing_roles_requires_login PASSED    [ 96%]
+tests/server/test_users.py::test_a_demoted_team_lead_still_leads_their_team PASSED [ 96%]
+tests/server/test_verification_service.py::test_create_pending_verification_hashes_the_code_at_rest PASSED [ 96%]
+tests/server/test_verification_service.py::test_verify_code_succeeds_with_correct_code PASSED [ 97%]
+tests/server/test_verification_service.py::test_verify_code_fails_with_wrong_code PASSED [ 97%]
+tests/server/test_verification_service.py::test_verify_code_is_one_time_use PASSED [ 97%]
+tests/server/test_verification_service.py::test_verify_code_fails_after_expiry PASSED [ 97%]
+tests/server/test_verification_service.py::test_five_wrong_attempts_lock_out_the_pending_attempt PASSED [ 97%]
+tests/server/test_verification_service.py::test_unknown_token_is_rejected PASSED [ 98%]
+tests/server/test_verification_service.py::test_resend_cooldown_blocks_rapid_repeats PASSED [ 98%]
+tests/server/test_verification_service.py::test_resend_verification_issues_a_different_code PASSED [ 98%]
+tests/shared/test_discovery.py::test_round_trip PASSED                   [ 98%]
+tests/shared/test_discovery.py::test_decode_rejects_garbage_bytes PASSED [ 98%]
+tests/shared/test_discovery.py::test_decode_rejects_non_utf8_bytes PASSED [ 99%]
+tests/shared/test_discovery.py::test_decode_rejects_wrong_protocol_version PASSED [ 99%]
+tests/shared/test_discovery.py::test_decode_rejects_missing_fields PASSED [ 99%]
+tests/shared/test_discovery.py::test_decode_rejects_wrong_field_types PASSED [ 99%]
+tests/shared/test_discovery.py::test_decode_rejects_foreign_json_shape PASSED [100%]
+
+=============================== warnings summary ===============================
+.venv/lib64/python3.14/site-packages/fastapi/testclient.py:1
+  /home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib64/python3.14/site-packages/starlette/testclient.py:53
+  /home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/server/test_gui.py::test_a_failed_start_is_reported_not_shown_as_running
+  /home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-54 (run)
+  
+  Traceback (most recent call last):
+    File "/home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/uvicorn/server.py", line 182, in startup
+      server = await loop.create_server(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+      ...<5 lines>...
+      )
+      ^
+    File "uvloop/loop.pyx", line 1794, in create_server
+      raise OSError(
+  OSError: [Errno 98] error while attempting to bind on address ('0.0.0.0', 35445): address already in use
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/usr/lib64/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/usr/lib64/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/uvicorn/server.py", line 86, in run
+      return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+    File "/usr/lib64/python3.14/asyncio/runners.py", line 205, in run
+      return runner.run(main)
+             ~~~~~~~~~~^^^^^^
+    File "/usr/lib64/python3.14/asyncio/runners.py", line 128, in run
+      return self._loop.run_until_complete(task)
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+    File "uvloop/loop.pyx", line 1512, in uvloop.loop.Loop.run_until_complete
+    File "uvloop/loop.pyx", line 1505, in uvloop.loop.Loop.run_until_complete
+      self.run_forever()
+    File "uvloop/loop.pyx", line 1379, in uvloop.loop.Loop.run_forever
+      self._run(mode)
+    File "uvloop/loop.pyx", line 557, in uvloop.loop.Loop._run
+      raise self._last_error
+    File "uvloop/loop.pyx", line 476, in uvloop.loop.Loop._on_idle
+      handler._run()
+    File "uvloop/cbhandles.pyx", line 83, in uvloop.loop.Handle._run
+    File "uvloop/cbhandles.pyx", line 63, in uvloop.loop.Handle._run
+      callback(*args)
+    File "/home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/uvicorn/server.py", line 90, in serve
+      await self._serve(sockets)
+    File "/home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/uvicorn/server.py", line 105, in _serve
+      await self.startup(sockets=sockets)
+    File "/home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/uvicorn/server.py", line 192, in startup
+      sys.exit(STARTUP_FAILURE)
+      ~~~~~~~~^^^^^^^^^^^^^^^^^
+  SystemExit: 3
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/server/test_startup.py::test_signup_works_on_a_freshly_migrated_database
+tests/server/test_startup.py::test_migrations_upgrade_downgrade_upgrade
+tests/server/test_startup.py::test_migrations_upgrade_downgrade_upgrade
+tests/server/test_startup.py::test_migrations_upgrade_downgrade_upgrade
+  /home/kalebtangen/Projects/Karios/Kairos/.venv/lib64/python3.14/site-packages/alembic/config.py:604: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+    util.warn_deprecated(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.14.7-final-0 ________________
+
+Name                                                                                Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------------------------------------------------------
+client/__init__.py                                                                      0      0   100%
+client/api_client/__init__.py                                                           2      0   100%
+client/api_client/client.py                                                           160     58    64%   48, 120, 124-125, 128-130, 147, 159-169, 173-177, 181-183, 188-190, 203, 206-212, 215-220, 223-229, 233-239, 244-250, 254-260, 265-271, 284-301, 304-312, 325
+client/main.py                                                                         21      1    95%   44
+client/main_thread_gc.py                                                               19      0   100%
+client/net/__init__.py                                                                  3      0   100%
+client/net/cert_pinning.py                                                              7      1    86%   17
+client/net/discovery_listener.py                                                       63      2    97%   29, 53
+client/theme/__init__.py                                                                2      0   100%
+client/theme/theme_manager.py                                                          46      3    93%   46, 70-71
+client/viewmodels/__init__.py                                                           0      0   100%
+client/viewmodels/background.py                                                        70      0   100%
+client/viewmodels/chat_viewmodel.py                                                    28      2    93%   32-33
+client/viewmodels/conversation_list_viewmodel.py                                       21      1    95%   12
+client/viewmodels/identity_viewmodel.py                                                37      0   100%
+client/viewmodels/permissions.py                                                       13      1    92%   39
+client/viewmodels/server_list_viewmodel.py                                             76      0   100%
+client/viewmodels/session.py                                                            4      0   100%
+client/viewmodels/teams_viewmodel.py                                                  136      4    97%   90-91, 218-219
+client/viewmodels/users_viewmodel.py                                                   60      4    93%   53-54, 99-100
+client/views/__init__.py                                                                0      0   100%
+client/views/add_server_dialog.py                                                      47      0   100%
+client/views/app_shell.py                                                              80      0   100%
+client/views/auth_dialog.py                                                           184     36    80%   163-164, 173-175, 181-182, 185-187, 203-204, 218-220, 227-229, 238-239, 248-250, 257-259, 271-273, 276-279, 281-284, 287-289
+client/views/chat_page.py                                                              90     15    83%   71-73, 86, 89, 99-100, 106, 110-112, 120, 126-128
+client/views/chat_thread_panel.py                                                     139     43    69%   109, 112-114, 126-127, 131, 136, 139, 142-144, 150-161, 164-180, 183-188
+client/views/connect_window.py                                                        206     19    91%   204-207, 225-230, 241, 274-283, 287, 336-337
+client/views/dashboard_page.py                                                         85      0   100%
+client/views/manage_members_dialog.py                                                  94     13    86%   22-24, 68-70, 116-118, 135, 139-141
+client/views/new_chat_dialog.py                                                        51      4    92%   53, 57-59
+client/views/new_group_dialog.py                                                       76      6    92%   73-75, 80, 93, 98
+client/views/server_settings_page.py                                                   64      6    91%   11-16
+client/views/server_tile.py                                                            32      0   100%
+client/views/teams_view.py                                                            225      1    99%   360
+client/views/theme_selector.py                                                         13      0   100%
+client/views/users_view.py                                                             75      0   100%
+client/views/widgets.py                                                                46      0   100%
+server/__init__.py                                                                      0      0   100%
+server/api/__init__.py                                                                  0      0   100%
+server/api/attachments.py                                                              45      5    89%   25, 41-42, 77, 88
+server/api/auth.py                                                                     69      2    97%   113, 125
+server/api/chat_messages.py                                                            30      0   100%
+server/api/conversations.py                                                            73     11    85%   52-53, 90-91, 111-112, 165, 168-178
+server/api/dependencies.py                                                             30      0   100%
+server/api/deps.py                                                                     17      0   100%
+server/api/errors.py                                                                    7      0   100%
+server/api/health.py                                                                    5      0   100%
+server/api/messages.py                                                                 17      0   100%
+server/api/people.py                                                                   21      0   100%
+server/api/protection.py                                                               71      0   100%
+server/api/server_settings.py                                                          21      0   100%
+server/api/teams.py                                                                    62      0   100%
+server/api/users.py                                                                    20      0   100%
+server/api/ws_chat.py                                                                  22      0   100%
+server/crypto.py                                                                       44      0   100%
+server/db/__init__.py                                                                   0      0   100%
+server/db/config.py                                                                     4      0   100%
+server/db/migrations/env.py                                                            25      6    76%   30, 37-45, 62
+server/db/migrations/versions/1bcbe7e42a47_add_sessions_table.py                       13      0   100%
+server/db/migrations/versions/04de8df24ec5_initial_schema.py                           23      0   100%
+server/db/migrations/versions/14bd78dc1837_add_messages_table.py                       11      0   100%
+server/db/migrations/versions/369bdfc05c2d_add_pending_verifications_table.py          13      0   100%
+server/db/migrations/versions/80896866bfa4_add_chat_and_server_settings_tables.py      28      0   100%
+server/db/migrations/versions/b3dc54a36214_add_lead_and_created_at_to_teams.py         24      1    96%   35
+server/db/migrations/versions/ea03b89dc9da_add_two_factor_enabled_to_users.py          11      0   100%
+server/db/session.py                                                                   39      1    97%   144
+server/discovery_announcer.py                                                          34      1    97%   39
+server/email_sender.py                                                                 17      0   100%
+server/gui.py                                                                         199     16    92%   181-185, 189-193, 197-209, 353
+server/main.py                                                                         50      2    96%   111-117
+server/models/__init__.py                                                              15      0   100%
+server/models/attachment.py                                                            12      0   100%
+server/models/base.py                                                                   2      0   100%
+server/models/chat_message.py                                                          14      0   100%
+server/models/conversation.py                                                          18      0   100%
+server/models/encrypted_text.py                                                        13      0   100%
+server/models/message.py                                                                8      0   100%
+server/models/pending_verification.py                                                  11      0   100%
+server/models/project.py                                                               10      0   100%
+server/models/role.py                                                                   6      0   100%
+server/models/server_settings.py                                                        8      0   100%
+server/models/session.py                                                               11      0   100%
+server/models/subtask.py                                                                9      0   100%
+server/models/task.py                                                                  11      0   100%
+server/models/team.py                                                                  14      0   100%
+server/models/user.py                                                                  10      0   100%
+server/realtime/__init__.py                                                             0      0   100%
+server/realtime/connection_manager.py                                                  26      3    88%   27, 42-43
+server/schemas/__init__.py                                                              0      0   100%
+server/schemas/attachment.py                                                            4      0   100%
+server/schemas/auth.py                                                                  8      0   100%
+server/schemas/chat_message.py                                                          9      0   100%
+server/schemas/conversation.py                                                         14      0   100%
+server/schemas/message.py                                                               9      0   100%
+server/schemas/people.py                                                                4      0   100%
+server/schemas/server_settings.py                                                       7      0   100%
+server/schemas/team.py                                                                 19      0   100%
+server/schemas/user.py                                                                  7      0   100%
+server/seed.py                                                                         64      1    98%   149
+server/services/__init__.py                                                             0      0   100%
+server/services/attachment_service.py                                                  77      8    90%   25, 39, 41, 60, 79-84
+server/services/auth_service.py                                                        89      7    92%   63-64, 74-76, 92, 94
+server/services/chat_service.py                                                        19      0   100%
+server/services/conversation_service.py                                                96     12    88%   55, 79, 83, 147, 150, 152, 171, 188, 192, 203-205
+server/services/message_service.py                                                     12      0   100%
+server/services/people_service.py                                                      12      0   100%
+server/services/server_settings_service.py                                             32      0   100%
+server/services/session_service.py                                                     37      1    97%   49
+server/services/team_service.py                                                       114      0   100%
+server/services/user_service.py                                                        19      0   100%
+server/services/verification_service.py                                                67      2    97%   74, 78
+server/tls.py                                                                          23      0   100%
+shared/__init__.py                                                                      0      0   100%
+shared/account_rules.py                                                                20      3    85%   126, 130, 132
+shared/chat_enums.py                                                                    7      0   100%
+shared/discovery.py                                                                    27      0   100%
+shared/message_rules.py                                                                 2      0   100%
+shared/roles.py                                                                         6      0   100%
+shared/text_rules.py                                                                    6      0   100%
+-----------------------------------------------------------------------------------------------------------------
+TOTAL                                                                                4328    302    93%
+======================= 474 passed, 7 warnings in 59.64s =======================
