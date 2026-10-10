@@ -1,5 +1,5 @@
 ============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- /home/kalebtangen/Projects/Karios/Kairos/.venv/bin/python
+platform linux -- Python 3.14.8, pytest-9.1.1, pluggy-1.6.0 -- /home/kalebtangen/Projects/Karios/Kairos/.venv/bin/python
 cachedir: .pytest_cache
 PySide6 6.11.2 -- Qt runtime 6.11.2 -- Qt compiled 6.11.2
 rootdir: /home/kalebtangen/Projects/Karios/Kairos
@@ -504,7 +504,7 @@ tests/server/test_gui.py::test_a_failed_start_is_reported_not_shown_as_running
       ^
     File "uvloop/loop.pyx", line 1794, in create_server
       raise OSError(
-  OSError: [Errno 98] error while attempting to bind on address ('0.0.0.0', 35445): address already in use
+  OSError: [Errno 98] error while attempting to bind on address ('0.0.0.0', 50863): address already in use
   
   During handling of the above exception, another exception occurred:
   
@@ -557,7 +557,7 @@ tests/server/test_startup.py::test_migrations_upgrade_downgrade_upgrade
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 ================================ tests coverage ================================
-_______________ coverage: platform linux, python 3.14.7-final-0 ________________
+_______________ coverage: platform linux, python 3.14.8-final-0 ________________
 
 Name                                                                                Stmts   Miss  Cover   Missing
 -----------------------------------------------------------------------------------------------------------------
@@ -682,4 +682,4 @@ shared/roles.py                                                                 
 shared/text_rules.py                                                                    6      0   100%
 -----------------------------------------------------------------------------------------------------------------
 TOTAL                                                                                4328    302    93%
-======================= 474 passed, 7 warnings in 59.64s =======================
+======================= 474 passed, 7 warnings in 56.99s =======================
