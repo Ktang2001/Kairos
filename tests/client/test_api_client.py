@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from client.api_client import ApiClient, ApiError, is_connection_error
+from client.api_client.client import _error_message
 from shared.roles import ROLE_ADMIN, ROLE_PROJECT_LEAD
 from tests.client.conftest import SETUP_TIMEOUT, TEST_PASSWORD, set_live_role, unique_email
 
@@ -55,6 +56,29 @@ def test_an_admin_cannot_change_their_own_role(live_server: str) -> None:
         admin.set_role(admin.user_id, "member")
     assert error.value.status_code == 409
     assert "can't change your own role" in error.value.message
+
+
+def _response(status_code: int, json_body) -> httpx.Response:
+    return httpx.Response(status_code, json=json_body, request=httpx.Request("GET", "http://x"))
+
+
+def test_error_message_reports_a_validation_failure_on_a_specific_field() -> None:
+    body = {"detail": [{"loc": ["body", "password"], "msg": "field required"}]}
+    assert _error_message(_response(422, body)) == "Password: field required"
+
+
+def test_error_message_does_not_crash_on_an_empty_loc() -> None:
+    """Regression test: a validation error with an empty `loc` list (present but
+    no elements) used to raise IndexError from `[-1]` on the empty list instead
+    of falling back to the generic default - this function must never itself
+    throw while trying to build an error message."""
+    body = {"detail": [{"loc": [], "msg": "field required"}]}
+    assert _error_message(_response(422, body)) == "field required"
+
+
+def test_error_message_falls_back_when_the_body_is_not_json() -> None:
+    response = httpx.Response(500, content=b"not json", request=httpx.Request("GET", "http://x"))
+    assert _error_message(response) == "The server returned an error (500)."
 
 
 def test_an_unreachable_server_is_a_connection_error(dead_server: str) -> None:

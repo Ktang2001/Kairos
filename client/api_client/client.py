@@ -75,7 +75,8 @@ def _error_message(response: httpx.Response) -> str:
         return detail
     if isinstance(detail, list) and detail and isinstance(detail[0], dict):
         first = detail[0]
-        field = str(first.get("loc", ["", ""])[-1]).replace("_", " ").capitalize()
+        loc = first.get("loc") or ["", ""]
+        field = str(loc[-1]).replace("_", " ").capitalize()
         message = str(first.get("msg", "is invalid"))
         message = message.removeprefix("Value error, ")
         return f"{field}: {message}" if field else message

@@ -110,6 +110,45 @@ def test_cannot_remove_or_demote_last_admin(client: TestClient, make_user) -> No
     assert demote_response.status_code == 409
 
 
+def test_non_admin_member_can_remove_themself_to_leave(client: TestClient, make_user) -> None:
+    alice = make_user("Alice", "alice@example.com")
+    bob = make_user("Bob", "bob@example.com")
+
+    group = client.post(
+        "/conversations/group",
+        json={"name": "Team", "member_user_ids": [bob.id]},
+        headers=auth_headers(alice.token),
+    ).json()
+
+    leave_response = client.delete(
+        f"/conversations/{group['id']}/participants/{bob.id}",
+        headers=auth_headers(bob.token),
+    )
+
+    assert leave_response.status_code == 200
+    participant_ids = {p["user_id"] for p in leave_response.json()["participants"]}
+    assert bob.id not in participant_ids
+
+
+def test_non_admin_member_still_cannot_remove_someone_else(client: TestClient, make_user) -> None:
+    alice = make_user("Alice", "alice@example.com")
+    bob = make_user("Bob", "bob@example.com")
+    carol = make_user("Carol", "carol@example.com")
+
+    group = client.post(
+        "/conversations/group",
+        json={"name": "Team", "member_user_ids": [bob.id, carol.id]},
+        headers=auth_headers(alice.token),
+    ).json()
+
+    response = client.delete(
+        f"/conversations/{group['id']}/participants/{carol.id}",
+        headers=auth_headers(bob.token),
+    )
+
+    assert response.status_code == 403
+
+
 def test_non_participant_cannot_read_conversation(client: TestClient, make_user) -> None:
     alice = make_user("Alice", "alice@example.com")
     bob = make_user("Bob", "bob@example.com")
