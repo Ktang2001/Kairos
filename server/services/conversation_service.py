@@ -163,11 +163,15 @@ def _count_admins(conversation: Conversation) -> int:
 def remove_participant(
     db: Session, conversation_id: int, acting_user_id: int, target_user_id: int
 ) -> Conversation:
+    """Remove `target_user_id`, or leave the conversation when it's the acting
+    user's own id - that self-removal is the one case that doesn't require
+    being an admin (mirrors teams' remove_member; see client.py)."""
     conversation = get_conversation(db, conversation_id)
     if conversation is None:
         raise NotParticipantError(f"conversation {conversation_id} does not exist")
-    require_conversation_admin(db, conversation_id, acting_user_id)
     target = require_participant(db, conversation_id, target_user_id)
+    if acting_user_id != target_user_id:
+        require_conversation_admin(db, conversation_id, acting_user_id)
 
     if target.role == ParticipantRole.ADMIN.value and _count_admins(conversation) <= 1:
         raise LastAdminError("cannot remove the last admin of a conversation")
