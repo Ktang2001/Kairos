@@ -104,10 +104,11 @@ Session: token (PK, opaque/unguessable), user_id, created_at, last_used_at, expi
 PendingVerification: token (PK, opaque), user_id, code_hash (SHA-256 of the emailed 6-digit code, never stored raw), created_at, expires_at (10 min), attempt_count (locks out after 5 wrong guesses) — only created for logins by accounts with User.two_factor_enabled=True; never for signup (server/models/pending_verification.py, server/services/verification_service.py); deleted once verified (one-time use) or once expired/locked-out.
 Team: id, name (unique, case-insensitive), lead_id → User, created_at, members (M2M to User via team_members). The lead is always a member; the lead and admins manage the team (server/services/team_service.py). Teams are visible only to members and admins.
 Project: id, team_id, name, description, status, created_at
-Task: id, project_id, title, description, assignee_id, due_date, status, created_at
-Subtask: id, task_id, title, assignee_id, due_date, status
+Task: id, project_id, title, description, assignee_id, start_date, due_date, status, created_at, completed_at (set when status becomes done)
+Subtask: id, task_id, title, assignee_id, start_date, due_date, status
+TaskDependency (task_dependencies table): task_id, depends_on_id - "task_id can't start until depends_on_id is done"; both tasks in the same project, never a loop (server/services/task_service.py). Drawn as the Gantt chart's arrows.
 Role: what a user can view/edit app-wide: admin, project_lead, member (shared/roles.py). One role per user everywhere; rows are created at server start-up. Admins change roles in the Users page (never their own); admins and project leads create teams.
-Status (2026-10-04): Project/Task/Subtask exist only as database tables - no API or screens yet (goals 4-7).
+Status (2026-10-12): Projects, tasks, subtasks and task dependencies have a backend again, plus a Gantt chart endpoint - no client screens yet. Routes: /teams/{id}/projects, /projects/{id}, /projects/{id}/tasks, /tasks/{id}, /tasks/{id}/subtasks, /subtasks/{id}, /tasks/{id}/dependencies, and GET /projects/{id}/gantt (server/services/gantt_service.py: one bar per dated task/subtask, dependency arrows, date range, today, overdue flags, progress, and dependencies whose dates are out of order). Permissions: team members and admins see and edit tasks and assign them to team members; only the team lead or an admin creates/edits projects and deletes tasks/subtasks. Statuses live in shared/statuses.py (todo / in_progress / done). Migration a04c4fb78442 adds the new columns and table.
 
 Chat feature (see server/models/{conversation,chat_message,attachment,server_settings}.py — kept separate from the Section 2 goals list, see the note at the end of Section 2):
 Conversation: id, kind (direct/group), name (nullable, group display name), created_by_user_id, created_at

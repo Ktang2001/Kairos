@@ -13,7 +13,7 @@ Usage in a route:
 
 from fastapi import HTTPException, status
 
-from server.services import team_service, user_service
+from server.services import project_service, task_service, team_service, user_service
 
 ERRORS: dict[type[Exception], tuple[int, str]] = {
     # Teams
@@ -43,6 +43,31 @@ ERRORS: dict[type[Exception], tuple[int, str]] = {
     team_service.NewLeadNotAMember: (
         status.HTTP_409_CONFLICT,
         "Add that user to the team before making them the lead",
+    ),
+    # Projects
+    project_service.ProjectNotFound: (status.HTTP_404_NOT_FOUND, "Project not found"),
+    # Tasks, subtasks and dependencies
+    task_service.TaskNotFound: (status.HTTP_404_NOT_FOUND, "Task not found"),
+    task_service.SubtaskNotFound: (status.HTTP_404_NOT_FOUND, "Subtask not found"),
+    task_service.AssigneeNotOnTeam: (
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "The assignee must be a member of this team",
+    ),
+    task_service.StartAfterDue: (
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "The start date cannot be after the due date",
+    ),
+    task_service.DependencyNotInProject: (
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "A task can only depend on another task in the same project",
+    ),
+    task_service.DependencyCycle: (
+        status.HTTP_409_CONFLICT,
+        "That would make the tasks wait on each other in a loop",
+    ),
+    task_service.DependencyNotFound: (
+        status.HTTP_404_NOT_FOUND,
+        "This task does not depend on that task",
     ),
     # Users (admin)
     user_service.UserNotFound: (status.HTTP_404_NOT_FOUND, "User not found"),

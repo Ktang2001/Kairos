@@ -19,7 +19,7 @@ from server.models.role import Role
 from server.models.server_settings import ServerSettings
 from server.models.session import Session
 from server.models.subtask import Subtask
-from server.models.task import Task
+from server.models.task import Task, task_dependencies
 from server.models.team import Team, team_members
 from server.models.user import User
 
@@ -39,5 +39,6 @@ __all__ = [
     "Task",
     "Team",
     "User",
+    "task_dependencies",
     "team_members",
 ]
