@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.schemas.task import MAX_TASK_DESCRIPTION_LENGTH, MAX_TITLE_LENGTH
-from server.services.gantt_service import local_today
+from server.services.dashboard_service import local_today
 from server.services.task_service import utcnow
 from tests.server.conftest import Account
 

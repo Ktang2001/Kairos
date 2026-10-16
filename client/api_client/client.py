@@ -6,9 +6,10 @@ the session token. Two styles of method live here, one from each branch:
 
 * Kaleb's (chat, people, conversations, attachments, server settings) call
   ``self._http`` directly and raise ``httpx`` errors, which those screens catch.
-* Nick2's (teams, users, ``me``) go through ``_request``, which turns every
-  failure into an ``ApiError`` with a message fit to show -- the form the Teams
-  and Users pages expect.
+* Nick2's (teams, users, ``me``, projects, tasks, Gantt, dashboard) go
+  through ``_request``, which turns every failure into an ``ApiError`` with a
+  message fit to show -- the form the Teams, Users, Projects and Dashboard
+  pages expect.
 
 Both send the same ``Authorization: Bearer <token>`` header over the same
 pinned connection.
@@ -372,3 +373,74 @@ class ApiClient:
     def set_role(self, user_id: int, role: str) -> dict:
         """Change someone's role (admins only, never your own)."""
         return self._request("PUT", f"/users/{user_id}/role", json={"role": role})
+
+    # ------------------------------------- projects, tasks, Gantt, dashboard
+
+    def list_projects(self, team_id: int) -> list[dict]:
+        """A team's projects, active first, each with its task counts."""
+        return self._request("GET", f"/teams/{team_id}/projects")
+
+    def create_project(self, team_id: int, name: str, description: str | None = None) -> dict:
+        """Create a project in a team (its lead or an admin)."""
+        return self._request(
+            "POST", f"/teams/{team_id}/projects", json={"name": name, "description": description}
+        )
+
+    def update_project(self, project_id: int, **changes) -> dict:
+        """Change any of ``name``, ``description``, ``status`` (lead or admin)."""
+        return self._request("PATCH", f"/projects/{project_id}", json=changes)
+
+    def delete_project(self, project_id: int) -> None:
+        """Delete a project with all its tasks (lead or admin)."""
+        self._request("DELETE", f"/projects/{project_id}")
+
+    def list_tasks(self, project_id: int) -> list[dict]:
+        """A project's tasks, soonest due first."""
+        return self._request("GET", f"/projects/{project_id}/tasks")
+
+    def get_task(self, task_id: int) -> dict:
+        """One task with its subtasks."""
+        return self._request("GET", f"/tasks/{task_id}")
+
+    def create_task(self, project_id: int, **fields) -> dict:
+        """Create a task: ``title`` plus any of ``description``, ``assignee_id``,
+        ``start_date``, ``due_date`` (ISO strings) and ``status``."""
+        return self._request("POST", f"/projects/{project_id}/tasks", json=fields)
+
+    def update_task(self, task_id: int, **changes) -> dict:
+        """Change only the fields given; ``None`` clears assignee, dates or description."""
+        return self._request("PATCH", f"/tasks/{task_id}", json=changes)
+
+    def delete_task(self, task_id: int) -> None:
+        """Delete a task and its subtasks (lead or admin)."""
+        self._request("DELETE", f"/tasks/{task_id}")
+
+    def create_subtask(self, task_id: int, **fields) -> dict:
+        """Add a subtask; returns the parent task."""
+        return self._request("POST", f"/tasks/{task_id}/subtasks", json=fields)
+
+    def update_subtask(self, subtask_id: int, **changes) -> dict:
+        """Change a subtask; returns the parent task."""
+        return self._request("PATCH", f"/subtasks/{subtask_id}", json=changes)
+
+    def delete_subtask(self, subtask_id: int) -> None:
+        """Delete a subtask (lead or admin)."""
+        self._request("DELETE", f"/subtasks/{subtask_id}")
+
+    def add_dependency(self, task_id: int, depends_on_id: int) -> dict:
+        """Make a task wait on another task in the same project."""
+        return self._request(
+            "POST", f"/tasks/{task_id}/dependencies", json={"depends_on_id": depends_on_id}
+        )
+
+    def remove_dependency(self, task_id: int, depends_on_id: int) -> dict:
+        """Remove a dependency; returns the task."""
+        return self._request("DELETE", f"/tasks/{task_id}/dependencies/{depends_on_id}")
+
+    def get_gantt(self, project_id: int) -> dict:
+        """Everything the project's Gantt chart draws (see server/schemas/gantt.py)."""
+        return self._request("GET", f"/projects/{project_id}/gantt")
+
+    def get_dashboard(self) -> dict:
+        """Statistics across your teams (see server/schemas/dashboard.py)."""
+        return self._request("GET", "/dashboard")

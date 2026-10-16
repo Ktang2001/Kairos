@@ -1,4 +1,14 @@
-from PySide6.QtCore import QDateTime, QTimer
+"""The Dashboard (context.md goal #7): a clock, four figures, a calendar with
+your deadlines marked, and lists of what's due and how each project is going.
+
+Built from GET /dashboard through ``DashboardViewModel``. Without a view model
+(as in some tests) the page shows its empty states and makes no requests.
+"""
+
+from datetime import date
+
+from PySide6.QtCore import QDate, QDateTime, QTimer
+from PySide6.QtGui import QColor, QFont, QTextCharFormat
 from PySide6.QtWidgets import (
     QCalendarWidget,
     QGroupBox,
@@ -8,6 +18,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from client.viewmodels.dashboard_viewmodel import DashboardViewModel
+from client.views.widgets import ErrorLabel
+
+#: Background for days with one of your deadlines: a translucent red, so the
+#: day number stays readable on light and dark themes. A background rather than
+#: red text, because the calendar already draws weekend numbers in red.
+DEADLINE_BACKGROUND = QColor(229, 72, 77, 90)
 
 
 class _StatTile(QWidget):
@@ -90,33 +108,37 @@ class _ListPanel(QGroupBox):
             self.list_widget.addItem(item)
 
 
-class DashboardPage(QWidget):
-    """Widgets-only shell: a calendar plus due-dates/tasks/meetings panels and a
-    stats row. No task/project backend exists yet (that's separate, ongoing work) -
-    this page deliberately makes no network calls; it's ready for someone else to
-    populate via each panel's set_items()/set_value() once that data exists.
-    """
+def _short(day: str | None) -> str:
+    """An API date as "Nov 02"."""
+    return date.fromisoformat(day).strftime("%b %d") if day else ""
 
-    def __init__(self) -> None:
+
+class DashboardPage(QWidget):
+    """The Dashboard tab. Display only; DashboardViewModel holds the data."""
+
+    def __init__(self, viewmodel: DashboardViewModel | None = None) -> None:
         super().__init__()
+        self.viewmodel = viewmodel
 
         self.clock = ClockWidget()
 
-        self.stat_tasks = _StatTile("Open Tasks")
-        self.stat_projects = _StatTile("Projects")
+        self.stat_tasks = _StatTile("My Open Tasks")
+        self.stat_projects = _StatTile("Active Projects")
         self.stat_due_soon = _StatTile("Due Soon")
-        self.stat_meetings = _StatTile("Meetings")
+        self.stat_overdue = _StatTile("Overdue")
 
         stats_row = QHBoxLayout()
         stats_row.addWidget(self.clock)
         stats_row.addStretch()
-        for tile in (self.stat_tasks, self.stat_projects, self.stat_due_soon, self.stat_meetings):
+        for tile in (self.stat_tasks, self.stat_projects, self.stat_due_soon, self.stat_overdue):
             stats_row.addWidget(tile)
 
         self.calendar = QCalendarWidget()
+        #: Days marked on the calendar, so the next load can unmark them.
+        self._marked_days: list[QDate] = []
 
-        self.due_dates_panel = _ListPanel("Due Dates", "No due dates yet.")
-        self.tasks_panel = _ListPanel("Tasks", "No tasks assigned yet.")
+        self.due_dates_panel = _ListPanel("My Deadlines", "No due dates yet.")
+        self.tasks_panel = _ListPanel("Project Progress", "No tasks or projects yet.")
         self.meetings_panel = _ListPanel("Meetings", "No meetings scheduled yet.")
 
         panels_column = QVBoxLayout()
@@ -130,7 +152,73 @@ class DashboardPage(QWidget):
         panels_widget.setLayout(panels_column)
         main_row.addWidget(panels_widget, stretch=1)
 
+        self.as_of_label = QLabel()
+        self.as_of_label.setProperty("muted", True)
+        self.error_label = ErrorLabel()
+
         layout = QVBoxLayout()
         layout.addLayout(stats_row)
         layout.addLayout(main_row)
+        layout.addWidget(self.as_of_label)
+        layout.addWidget(self.error_label)
         self.setLayout(layout)
+
+        if viewmodel is not None:
+            viewmodel.loaded.connect(self.show_data)
+            viewmodel.error_changed.connect(self.error_label.show_message)
+            if viewmodel.data is not None:
+                self.show_data(viewmodel.data)
+
+    def refresh(self) -> None:
+        """Reload the figures (no-op without a view model)."""
+        if self.viewmodel is not None:
+            self.viewmodel.refresh()
+
+    def show_data(self, data: dict) -> None:
+        """Fill every tile, list and calendar mark from a /dashboard response."""
+        mine, overview = data["my_work"], data["overview"]
+        self.stat_tasks.set_value(str(mine["open"]))
+        self.stat_projects.set_value(str(overview["active_projects"]))
+        self.stat_due_soon.set_value(str(mine["due_soon"]))
+        self.stat_overdue.set_value(str(mine["overdue"]))
+
+        today = data["today"]
+        deadlines = []
+        for task in mine["upcoming"]:
+            late = "OVERDUE - " if task["due_date"] < today else ""
+            deadlines.append(
+                f"{late}{_short(task['due_date'])}: {task['title']} ({task['project_name']})"
+            )
+        self.due_dates_panel.set_items(deadlines)
+
+        progress = []
+        for project in data["projects"]:
+            line = (
+                f"{project['name']} ({project['team_name']}): {project['percent_complete']:g}% done"
+            )
+            if project["overdue"]:
+                line += f", {project['overdue']} overdue"
+            if project["status"] == "completed":
+                line += " [completed]"
+            progress.append(line)
+        self.tasks_panel.set_items(progress)
+
+        self._mark_deadlines([task["due_date"] for task in mine["upcoming"]])
+        self.as_of_label.setText(
+            f'Figures as of {_short(today)}. "Due soon" means within '
+            f"{data['due_soon_days']} days. Your deadlines are shaded on the calendar."
+        )
+
+    def _mark_deadlines(self, days: list[str]) -> None:
+        """Shade each day with one of your deadlines and make it bold; unmark the old ones."""
+        for day in self._marked_days:
+            self.calendar.setDateTextFormat(day, QTextCharFormat())
+        mark = QTextCharFormat()
+        mark.setBackground(DEADLINE_BACKGROUND)
+        mark.setFontWeight(QFont.Weight.Bold)
+        self._marked_days = []
+        for value in days:
+            day = date.fromisoformat(value)
+            qdate = QDate(day.year, day.month, day.day)
+            self.calendar.setDateTextFormat(qdate, mark)
+            self._marked_days.append(qdate)

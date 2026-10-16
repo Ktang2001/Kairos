@@ -7,7 +7,7 @@
   that run before any route: request-size limit, local-only API docs, a
   clean 422 for absurdly large numbers;
 * **routers**, one per area: health, auth (sign-in/accounts), messages,
-  teams, projects (with the Gantt chart), tasks, users (admin), people, conversations, chat messages, attachments,
+  teams, projects (with the Gantt chart), tasks, dashboard, users (admin), people, conversations, chat messages, attachments,
   server settings, and the live-chat websocket.
 
 Run it with ``python -m server.main`` or through the server window
@@ -29,6 +29,7 @@ from server.api.attachments import router as attachments_router
 from server.api.auth import router as auth_router
 from server.api.chat_messages import router as chat_messages_router
 from server.api.conversations import router as conversations_router
+from server.api.dashboard import router as dashboard_router
 from server.api.health import router as health_router
 from server.api.messages import router as messages_router
 from server.api.people import router as people_router
@@ -99,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(teams_router)
     app.include_router(projects_router)
     app.include_router(tasks_router)
+    app.include_router(dashboard_router)
     app.include_router(users_router)
     app.include_router(people_router)
     app.include_router(conversations_router)

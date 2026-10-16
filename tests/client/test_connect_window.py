@@ -1,6 +1,7 @@
+import pytest
 from PySide6.QtCore import QSettings, Qt
 
-from client.api_client import ApiClient
+from client.api_client import ApiClient, ApiError
 from client.net.discovery_listener import DiscoveredServer
 from client.theme import ThemeManager
 from client.viewmodels.identity_viewmodel import IdentityViewModel
@@ -8,6 +9,18 @@ from client.viewmodels.server_list_viewmodel import ServerListViewModel
 from client.views.auth_dialog import AuthDialog
 from client.views.connect_window import ConnectWindow
 from tests.client.conftest import StubDiscoveryListener
+
+
+@pytest.fixture(autouse=True)
+def _no_dashboard_request(monkeypatch) -> None:
+    """Signing in opens the app on the Dashboard, which loads at once. These
+    tests use made-up server addresses, so answer that request straight away
+    instead of waiting for a connection that can't succeed."""
+
+    def offline(self) -> dict:
+        raise ApiError("offline in this test")
+
+    monkeypatch.setattr(ApiClient, "get_dashboard", offline)
 
 
 def _isolated_viewmodel(tmp_path) -> ServerListViewModel:

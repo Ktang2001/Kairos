@@ -5,7 +5,7 @@ client can draw. Who may see it is the project's rule: the team's members and
 admins (``project_service.get_visible_project``).
 """
 
-from datetime import UTC, date, datetime
+from datetime import date
 
 from sqlalchemy.orm import Session as OrmSession
 
@@ -15,20 +15,11 @@ from server.models.user import User
 from server.schemas.gantt import GanttOut, GanttRow, ScheduleConflict
 from server.schemas.user import to_user_out
 from server.services import project_service, task_service
+from server.services.dashboard_service import local_today
 from shared.statuses import TaskStatus
 
 #: Progress shown for an in-progress task with no subtasks to count.
 IN_PROGRESS_WITHOUT_SUBTASKS = 50
-
-
-def local_today() -> date:
-    """Today's date on the hosting computer, in its own time zone.
-
-    Due dates are calendar dates as people mean them ("due Friday"), so they
-    are compared with the local date, not the UTC one -- in the evening in the
-    Americas, UTC is already tomorrow.
-    """
-    return datetime.now(UTC).astimezone().date()
 
 
 def bar_dates(start: date | None, due: date | None) -> tuple[date | None, date | None, bool]:
