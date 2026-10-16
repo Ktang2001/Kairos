@@ -9,9 +9,11 @@ from server.models.base import Base
 class Session(Base):
     """A login session created by signup/login (see server/services/session_service.py).
 
-    `token` (not a surrogate int id) is the primary key - it's the credential itself,
-    opaque and unguessable (`secrets.token_urlsafe`), replacing the old placeholder
-    where a client-supplied X-Kairos-User-Id header was trusted with no proof at all.
+    `token` (not a surrogate int id) is the primary key: the SHA-256 of the login
+    token (`session_service.hash_token`), never the token itself, so a copied
+    database signs nobody in. The token is opaque and unguessable
+    (`secrets.token_urlsafe`), replacing the old placeholder where a
+    client-supplied X-Kairos-User-Id header was trusted with no proof at all.
     """
 
     __tablename__ = "sessions"

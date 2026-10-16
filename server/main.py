@@ -25,6 +25,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.exc import OperationalError
 
+from server import log_redaction
 from server.api.attachments import router as attachments_router
 from server.api.auth import router as auth_router
 from server.api.chat_messages import router as chat_messages_router
@@ -82,6 +83,9 @@ def create_app() -> FastAPI:
     fresh app with clean state.
     """
     app = FastAPI(title="Kairos API", lifespan=lifespan)
+
+    # Keep login tokens (the chat WebSocket's ?token=) out of uvicorn's logs.
+    log_redaction.install()
 
     # MERGE-CRITICAL: keep these three lines. If lost: one huge request can
     # exhaust the host's memory, the API map is shown to anyone on the network,
