@@ -12,10 +12,12 @@ against the stored other end.
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from server.schemas.user import UserOut, to_user_out
+from shared.date_rules import DATE_RANGE_MESSAGE, date_in_range
 from shared.statuses import TaskStatus
+from shared.text_rules import clean_display_text
 
 if TYPE_CHECKING:
     from server.models.subtask import Subtask
@@ -29,6 +31,11 @@ def _blank_to_none(value: str | None) -> str | None:
     """Treat an empty description (after whitespace stripping) as no description."""
     return value or None
 
+
+#: A title with invisible and control characters removed first (zero-width
+#: spaces, NUL, right-to-left overrides), so a title can't look blank or
+#: reversed on screen. Found by stress testing: "​" was a valid title.
+Title = Annotated[str, BeforeValidator(clean_display_text)]
 
 #: An all-whitespace description means "no description", not an empty one.
 #: (Whitespace is stripped first by ``str_strip_whitespace``.)
@@ -61,7 +68,10 @@ class _DatesInOrder(BaseModel):
 
     @model_validator(mode="after")
     def start_is_not_after_due(self) -> "_DatesInOrder":
-        """A bar cannot end before it starts."""
+        """Both dates in the allowed range (shared/date_rules.py), and a bar cannot end
+        before it starts."""
+        if not (date_in_range(self.start_date) and date_in_range(self.due_date)):
+            raise ValueError(DATE_RANGE_MESSAGE)
         if self.start_date and self.due_date and self.start_date > self.due_date:
             raise ValueError("start_date cannot be after due_date")
         return self
@@ -72,7 +82,7 @@ class TaskCreate(_DatesInOrder):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
+    title: Title = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
     description: Description = None
     assignee_id: int | None = None
     status: TaskStatus = TaskStatus.TODO
@@ -83,7 +93,7 @@ class TaskUpdate(_NoNullRequiredFields, _DatesInOrder):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    title: str | None = Field(default=None, min_length=1, max_length=MAX_TITLE_LENGTH)
+    title: Title | None = Field(default=None, min_length=1, max_length=MAX_TITLE_LENGTH)
     description: Description = None
     assignee_id: int | None = None
     status: TaskStatus | None = None
@@ -94,7 +104,7 @@ class SubtaskCreate(_DatesInOrder):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
+    title: Title = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
     assignee_id: int | None = None
     status: TaskStatus = TaskStatus.TODO
 
@@ -104,7 +114,7 @@ class SubtaskUpdate(_NoNullRequiredFields, _DatesInOrder):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    title: str | None = Field(default=None, min_length=1, max_length=MAX_TITLE_LENGTH)
+    title: Title | None = Field(default=None, min_length=1, max_length=MAX_TITLE_LENGTH)
     assignee_id: int | None = None
     status: TaskStatus | None = None
 

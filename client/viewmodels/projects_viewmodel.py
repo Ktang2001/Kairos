@@ -20,6 +20,8 @@ from PySide6.QtCore import QObject, Signal
 from client.api_client import ApiClient
 from client.viewmodels.background import BackgroundRunner
 from client.viewmodels.session import Session
+from shared.date_rules import DATE_RANGE_MESSAGE, date_in_range
+from shared.text_rules import clean_display_text
 
 MAX_PROJECT_NAME_LENGTH = 100
 MAX_TITLE_LENGTH = 200
@@ -30,8 +32,9 @@ STATUS_LABELS: dict[str, str] = {"todo": "To do", "in_progress": "In progress", 
 
 
 def name_problem(name: str, *, what: str, limit: int) -> str | None:
-    """A message if ``name`` is blank or too long, else None. Matches the server's rules."""
-    name = name.strip()
+    """A message if ``name`` is blank or too long, else None. Matches the server's
+    rules, including ignoring invisible characters."""
+    name = clean_display_text(name)
     if not name:
         return f"Enter a {what}."
     if len(name) > limit:
@@ -46,6 +49,8 @@ def task_fields_problem(fields: dict) -> str | None:
     if len(fields.get("description") or "") > MAX_DESCRIPTION_LENGTH:
         return f"The description can be at most {MAX_DESCRIPTION_LENGTH} characters."
     start, due = fields.get("start_date"), fields.get("due_date")
+    if not (date_in_range(start) and date_in_range(due)):
+        return DATE_RANGE_MESSAGE
     if start is not None and due is not None and start > due:
         return "The start date can't be after the due date."
     return None
@@ -54,7 +59,7 @@ def task_fields_problem(fields: dict) -> str | None:
 def to_request(fields: dict) -> dict:
     """The task form's values in the form the API takes: trimmed text, ISO dates."""
     body = dict(fields)
-    body["title"] = body["title"].strip()
+    body["title"] = clean_display_text(body["title"])
     description = (body.get("description") or "").strip()
     body["description"] = description or None
     for key in ("start_date", "due_date"):
@@ -233,7 +238,7 @@ class ProjectsViewModel(QObject):
         if problem := name_problem(title, what="subtask title", limit=MAX_TITLE_LENGTH):
             self.error_changed.emit(problem)
             return
-        task_id, title = self.task["id"], title.strip()
+        task_id, title = self.task["id"], clean_display_text(title)
         self._run(lambda client: client.create_subtask(task_id, title=title))
 
     def set_subtask_done(self, subtask_id: int, done: bool) -> None:

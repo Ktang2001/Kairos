@@ -55,6 +55,7 @@ from client.viewmodels.projects_viewmodel import (
 from client.views.gantt_chart import GanttChart, parse_day
 from client.views.teams_view import ask_yes_no
 from client.views.widgets import ElidedLabel, ErrorLabel
+from shared.date_rules import EARLIEST_TASK_DATE, LATEST_TASK_DATE
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 
@@ -71,6 +72,11 @@ def show_date(value: str | None) -> str:
     return day.strftime("%b %d, %Y") if day else ""
 
 
+def _qdate(value: date) -> QDate:
+    """A ``date`` as a ``QDate``."""
+    return QDate(value.year, value.month, value.day)
+
+
 class OptionalDateEdit(QWidget):
     """A date that may be left unset: a checkbox, then a date picker it enables."""
 
@@ -80,6 +86,8 @@ class OptionalDateEdit(QWidget):
         self.edit = QDateEdit()
         self.edit.setCalendarPopup(True)
         self.edit.setDisplayFormat("MMM d, yyyy")
+        # The same range the server accepts, so no stored date is ever clamped.
+        self.edit.setDateRange(_qdate(EARLIEST_TASK_DATE), _qdate(LATEST_TASK_DATE))
         self.edit.setDate(QDate.currentDate())
         self.edit.setEnabled(False)
         self.check.toggled.connect(self.edit.setEnabled)
@@ -97,9 +105,7 @@ class OptionalDateEdit(QWidget):
     def set_value(self, value: date | None) -> None:
         """Show ``value``, or untick the box for None (keeping today in the picker)."""
         self.check.setChecked(value is not None)
-        self.edit.setDate(
-            QDate(value.year, value.month, value.day) if value else QDate.currentDate()
-        )
+        self.edit.setDate(_qdate(value) if value else QDate.currentDate())
 
 
 class ProjectsView(QWidget):
@@ -488,10 +494,36 @@ class ProjectsView(QWidget):
         )
 
     def _fill_tasks(self) -> None:
-        """The task table, with the open task selected."""
+        """The task table, with the open task selected.
+
+        The fit-to-contents columns are switched off while the cells go in and
+        fitted once at the end. Left on, Qt re-measures every row after each
+        cell, which made the redraw grow with the square of the task count
+        (found by stress testing: 400 tasks froze the window for 12 s on every
+        automatic refresh).
+        """
         vm = self.viewmodel
-        self.tasks_table.setRowCount(len(vm.tasks))
-        for row, task in enumerate(vm.tasks):
+        table = self.tasks_table
+        header = table.horizontalHeader()
+        table.setUpdatesEnabled(False)
+        for column in range(1, len(TASK_COLUMNS)):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
+        try:
+            self._fill_task_rows(vm.tasks)
+        finally:
+            for column in range(1, len(TASK_COLUMNS)):
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+            table.setUpdatesEnabled(True)
+        table.clearSelection()
+        if vm.task_id is not None:
+            for row, task in enumerate(vm.tasks):
+                if task["id"] == vm.task_id:
+                    table.selectRow(row)
+
+    def _fill_task_rows(self, tasks: list[dict]) -> None:
+        """Put one row per task into the table."""
+        self.tasks_table.setRowCount(len(tasks))
+        for row, task in enumerate(tasks):
             assignee = task["assignee"]["name"] if task["assignee"] else "—"
             subtasks = (
                 f"{task['subtasks_done']}/{task['subtasks_total']}"
@@ -510,11 +542,6 @@ class ProjectsView(QWidget):
                 item = QTableWidgetItem(text)
                 item.setData(ID_ROLE, task["id"])
                 self.tasks_table.setItem(row, column, item)
-        self.tasks_table.clearSelection()
-        if vm.task_id is not None:
-            for row, task in enumerate(vm.tasks):
-                if task["id"] == vm.task_id:
-                    self.tasks_table.selectRow(row)
 
     def _fill_editor(self) -> None:
         """Load the open task into the editor -- unless the user is editing that same task."""

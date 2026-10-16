@@ -451,3 +451,91 @@ def test_server_errors_are_shown(qtbot: QtBot, crew: Crew) -> None:
     view.save_task_button.click()
     _settle(qtbot, view)
     assert view.error_label.text() == "Task not found"
+
+
+# --------------------------------------------- input limits (stress test)
+
+
+def test_the_date_pickers_cover_exactly_the_servers_range(qtbot: QtBot, crew: Crew) -> None:
+    from client.views.projects_view import OptionalDateEdit
+
+    picker = OptionalDateEdit("Start")
+    qtbot.addWidget(picker)
+    picker.set_value(date(1900, 1, 1))
+    assert picker.value() == date(1900, 1, 1)
+    picker.set_value(date(2199, 12, 31))
+    assert picker.value() == date(2199, 12, 31)
+
+
+def test_an_invisible_title_is_refused_before_sending(qtbot: QtBot, crew: Crew) -> None:
+    _project_with_tasks(crew)
+    view = _open(qtbot, crew.member)
+    _fill_task(view, "\u200b\u2060")
+    view.save_task_button.click()
+    assert not view.viewmodel.busy
+    assert view.error_label.text() == "Enter a task title."
+
+
+def test_task_fields_problem_checks_the_date_range() -> None:
+    from client.viewmodels.projects_viewmodel import task_fields_problem
+
+    assert task_fields_problem({"title": "x", "due_date": date(1800, 1, 1)}) == (
+        "Dates must be between 1900 and 2199."
+    )
+    assert task_fields_problem({"title": "x", "due_date": date(2026, 1, 1)}) is None
+
+
+def test_a_big_project_redraws_quickly(qtbot: QtBot) -> None:
+    """Found by stress testing: the task table redraw grew with the square of the
+    task count (400 tasks froze the window for 12 s on every auto-refresh)."""
+    import time
+
+    from client.viewmodels.projects_viewmodel import ProjectsViewModel
+    from client.viewmodels.session import Session
+
+    me = {"id": 1, "name": "Lena", "email": "l@x.co", "role": "project_lead"}
+    vm = ProjectsViewModel(
+        Session(client=ApiClient(base_url="http://127.0.0.1:9", token="t", user_id=1), user=me)
+    )
+    tasks = [
+        {
+            "id": i,
+            "project_id": 1,
+            "title": f"Task {i}",
+            "description": None,
+            "status": "todo",
+            "assignee": me,
+            "start_date": "2026-11-02",
+            "due_date": "2026-11-09",
+            "created_at": "2026-01-01T00:00:00",
+            "completed_at": None,
+            "subtasks_done": 0,
+            "subtasks_total": 1,
+            "depends_on": [],
+        }
+        for i in range(1, 1001)
+    ]
+    vm.me, vm.loaded, vm.tasks = me, True, tasks
+    vm.teams = [{"id": 1, "name": "Alpha", "lead": me, "member_count": 1}]
+    vm.team = {"id": 1, "name": "Alpha", "lead": me, "members": [me]}
+    vm.projects = [
+        {
+            "id": 1,
+            "team_id": 1,
+            "name": "Big",
+            "description": None,
+            "status": "active",
+            "created_at": "x",
+            "tasks": {"todo": 1000, "in_progress": 0, "done": 0, "total": 1000},
+        }
+    ]
+    vm.project = vm.projects[0]
+    view = ProjectsView(vm)
+    qtbot.addWidget(view)
+    view.show()
+
+    started = time.perf_counter()
+    vm.changed.emit()
+    assert time.perf_counter() - started < 3
+    assert view.tasks_table.rowCount() == 1000
+    assert view.tasks_table.item(999, 0).text() == "Task 1000"

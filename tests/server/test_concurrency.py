@@ -167,9 +167,9 @@ def test_handing_over_the_lead_while_removing_that_person(live) -> None:
                 }
             finally:
                 db.close()
-            assert lead_id in members, (
-                f"round {r}: lead {lead_id} not among {members} (codes {codes})"
-            )
+            assert (
+                lead_id in members
+            ), f"round {r}: lead {lead_id} not among {members} (codes {codes})"
 
 
 def test_two_admins_demoting_each_other_always_leave_one(live) -> None:

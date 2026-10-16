@@ -221,3 +221,28 @@ def test_parse_day() -> None:
     assert parse_day("2026-11-02") == date(2026, 11, 2)
     assert parse_day(date(2026, 1, 1)) == date(2026, 1, 1)
     assert parse_day(None) is None
+
+
+# ---------------------------------------------- extreme dates (stress test)
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        ("0001-01-01", "0001-01-02"),
+        ("9999-12-30", "9999-12-31"),
+        ("0001-01-01", "9999-12-31"),
+        ("1900-01-01", "2199-12-31"),
+    ],
+)
+def test_extreme_dates_never_crash_the_chart(chart: GanttChart, start: str, end: str) -> None:
+    """Found by stress testing: a year-1 task raised OverflowError and broke the page."""
+    from client.views.gantt_chart import MAX_DAYS
+
+    chart.set_chart(_chart([_row(1, "Edge", start, end)], today="2026-10-15"))
+    assert chart.sizeHint().width() <= LABEL_WIDTH + MAX_DAYS * DEFAULT_DAY_WIDTH + 16
+    rect = chart.bar_rect(0)
+    assert rect.right() <= chart.sizeHint().width()
+    chart.resize(2000, 300)
+    assert not chart.grab().isNull()
+    chart.describe(0)

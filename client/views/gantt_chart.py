@@ -20,7 +20,7 @@ status colours, which are mid-tones readable on light and dark backgrounds.
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
 from PySide6.QtWidgets import QToolTip, QWidget
 
@@ -34,6 +34,10 @@ DEFAULT_DAY_WIDTH = 24
 MARGIN_DAYS = 2
 #: Today is pulled into the chart's range if it is within this many days of it.
 TODAY_REACH_DAYS = 30
+#: The most days the chart lays out (about 40 years). The server keeps dates
+#: within 1900-2199, but even that span is far wider than any screen; a bar
+#: beyond this stops at the right edge.
+MAX_DAYS = 40 * 366
 
 STATUS_COLOURS = {
     "todo": QColor("#7d8fa8"),
@@ -43,6 +47,15 @@ STATUS_COLOURS = {
 ALERT_RED = QColor("#e5484d")
 
 STATUS_LABELS = {"todo": "To do", "in_progress": "In progress", "done": "Done"}
+
+
+def _shift(day: date, days: int) -> date:
+    """``day`` moved by ``days``, stopping at the first/last date Python can hold
+    instead of failing (found by stress testing: a year-1 task crashed the chart)."""
+    try:
+        return day + timedelta(days=days)
+    except OverflowError:
+        return date.max if days > 0 else date.min
 
 
 def parse_day(value: str | date | None) -> date | None:
@@ -89,13 +102,13 @@ class GanttChart(QWidget):
         last = parse_day(chart["range_end"])
         today = self._today
         if today is not None:
-            if first - timedelta(days=TODAY_REACH_DAYS) <= today < first:
+            if _shift(first, -TODAY_REACH_DAYS) <= today < first:
                 first = today
-            if last < today <= last + timedelta(days=TODAY_REACH_DAYS):
+            if last < today <= _shift(last, TODAY_REACH_DAYS):
                 last = today
-        first -= timedelta(days=MARGIN_DAYS)
-        last += timedelta(days=MARGIN_DAYS)
-        return first, (last - first).days + 1
+        first = _shift(first, -MARGIN_DAYS)
+        last = _shift(last, MARGIN_DAYS)
+        return first, min((last - first).days + 1, MAX_DAYS)
 
     @property
     def rows(self) -> list[dict]:
@@ -155,8 +168,11 @@ class GanttChart(QWidget):
         start, end = parse_day(row["start"]), parse_day(row["end"])
         inset = 9 if row["kind"] == "subtask" else 6
         top = HEADER_HEIGHT + index * ROW_HEIGHT + inset
-        left = self.x_of(start)
-        width = ((end - start).days + 1) * self._day_width
+        # Clamped to the drawn days, so a bar past MAX_DAYS stops at the edge.
+        first_col = min((start - self._first_day).days, self._days - 1)
+        last_col = max(first_col, min((end - self._first_day).days, self._days - 1))
+        left = LABEL_WIDTH + first_col * self._day_width
+        width = (last_col - first_col + 1) * self._day_width
         return QRectF(left + 1, top, max(2.0, width - 2), ROW_HEIGHT - 2 * inset)
 
     def arrows(self) -> list[tuple[int, int, bool]]:
@@ -196,7 +212,7 @@ class GanttChart(QWidget):
             )
             painter.end()
             return
-        self._draw_grid(painter)
+        self._draw_grid(painter, event.rect())
         self._draw_labels(painter)
         self._draw_bars(painter)
         self._draw_arrows(painter)
@@ -209,19 +225,25 @@ class GanttChart(QWidget):
         colour.setAlpha(40)
         return colour
 
-    def _draw_grid(self, painter: QPainter) -> None:
-        """Weekend shading, day and month labels, and the row lines."""
+    def _draw_grid(self, painter: QPainter, visible: QRect) -> None:
+        """Weekend shading, day and month labels, and the row lines.
+
+        Only the day columns inside ``visible`` (the part being repainted) are
+        drawn, so a chart many years wide repaints as fast as a short one.
+        """
         palette = self.palette()
         bottom = HEADER_HEIGHT + len(self._rows) * ROW_HEIGHT
         weekend = QColor(palette.text().color())
         weekend.setAlpha(14)
         painter.setPen(palette.text().color())
-        for offset in range(self._days):
+        first_visible = max(0, (visible.left() - LABEL_WIDTH) // self._day_width - 1)
+        last_visible = min(self._days, (visible.right() - LABEL_WIDTH) // self._day_width + 2)
+        for offset in range(first_visible, last_visible):
             day = self._first_day + timedelta(days=offset)
             x = self.x_of(day)
             if day.weekday() >= 5:
                 painter.fillRect(QRectF(x, HEADER_HEIGHT, self._day_width, bottom), weekend)
-            if day.day == 1 or offset == 0:
+            if day.day == 1 or offset == first_visible:
                 painter.drawText(QPointF(x + 2, 16), day.strftime("%b %Y"))
             # Day numbers when there is room; otherwise Mondays only.
             if self._day_width >= 20 or day.weekday() == 0:

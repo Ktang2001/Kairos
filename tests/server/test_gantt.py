@@ -495,3 +495,44 @@ def test_bar_dates_covers_every_combination() -> None:
     assert gantt_service.bar_dates(D, None) == (D, D, True)
     assert gantt_service.bar_dates(None, D) == (D, D, True)
     assert gantt_service.bar_dates(None, None) == (None, None, False)
+
+
+# ------------------------------------------------- date range (stress test)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"start_date": "1899-12-31"},
+        {"due_date": "2200-01-01"},
+        {"start_date": "0001-01-01", "due_date": "0001-01-02"},
+        {"due_date": "9999-12-31"},
+    ],
+)
+def test_dates_outside_1900_to_2199_are_refused(
+    client: TestClient, member: Account, project: dict, fields: dict
+) -> None:
+    """Found by stress testing: a year-1 task crashed the client's Gantt chart."""
+    response = client.post(
+        f"/projects/{project['id']}/tasks", json={"title": "x", **fields}, headers=member.headers
+    )
+    assert response.status_code == 422
+    assert "1900 and 2199" in response.text
+
+    task = _add_task(client, member.headers, project["id"])
+    patched = client.patch(f"/tasks/{task['id']}", json=fields, headers=member.headers)
+    assert patched.status_code == 422
+    sub = client.post(
+        f"/tasks/{task['id']}/subtasks", json={"title": "s", **fields}, headers=member.headers
+    )
+    assert sub.status_code == 422
+
+
+def test_the_first_and_last_allowed_days_are_accepted(
+    client: TestClient, member: Account, project: dict
+) -> None:
+    task = _add_task(
+        client, member.headers, project["id"], start_date="1900-01-01", due_date="2199-12-31"
+    )
+    assert (task["start_date"], task["due_date"]) == ("1900-01-01", "2199-12-31")
+    assert _gantt(client, member.headers, project["id"])["range_end"] == "2199-12-31"

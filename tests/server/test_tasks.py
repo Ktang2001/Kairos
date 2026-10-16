@@ -573,3 +573,30 @@ def test_due_dates_round_trip_as_plain_dates(
         headers=member.headers,
     ).json()
     assert body["due_date"] == today
+
+
+@pytest.mark.parametrize("title", ["\u200b", "\u200b\u2060 ", "\x00", "\u202e"])
+def test_an_invisible_title_is_refused(
+    client: TestClient, member: Account, project: dict, task: dict, title: str
+) -> None:
+    """Found by stress testing: titles made only of invisible or control characters were saved."""
+    url = f"/projects/{project['id']}/tasks"
+    assert client.post(url, json={"title": title}, headers=member.headers).status_code == 422
+    patch = client.patch(f"/tasks/{task['id']}", json={"title": title}, headers=member.headers)
+    assert patch.status_code == 422
+    sub = client.post(
+        f"/tasks/{task['id']}/subtasks", json={"title": title}, headers=member.headers
+    )
+    assert sub.status_code == 422
+
+
+def test_invisible_characters_are_removed_from_titles(
+    client: TestClient, member: Account, project: dict
+) -> None:
+    response = client.post(
+        f"/projects/{project['id']}/tasks",
+        json={"title": "Wri\u200bte\x00 copy\u202e"},
+        headers=member.headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["title"] == "Write copy"
