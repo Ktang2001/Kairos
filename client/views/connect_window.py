@@ -264,11 +264,40 @@ class ConnectWindow(QMainWindow):
             user_id, user_name, token = cached
             self.api_client.token = token
             self.api_client.user_id = user_id
+            if self._saved_sign_in_rejected():
+                # The server no longer accepts the saved token (signed out
+                # elsewhere, expired, or every session ended by a server
+                # update). Forget it and ask for a password instead of opening
+                # an app where every request fails with 401.
+                self.identity_vm.clear(server.id)
+                self.api_client.token = None
+                self.api_client.user_id = None
+                self.identity_label.setText("Not signed in")
+                self.status_label.setText(
+                    f"Connected to {display_name}. Your saved sign-in has expired - "
+                    "please sign in again."
+                )
+                self._on_sign_in_clicked()
+                return
             self.identity_label.setText(f"Signed in as {user_name}")
             self._enter_app_shell(user_name, display_name)
         else:
             self.identity_label.setText("Not signed in")
             self._on_sign_in_clicked()
+
+    def _saved_sign_in_rejected(self) -> bool:
+        """True if the server answers 401 to the saved token.
+
+        Any other failure (the host slow or briefly unreachable) is not treated
+        as a rejection: the app opens as before and shows its own error.
+        """
+        try:
+            self.api_client.get_my_profile()
+        except httpx.HTTPStatusError as exc:
+            return exc.response.status_code == 401
+        except httpx.HTTPError:
+            return False
+        return False
 
     def _on_add_server_clicked(self) -> None:
         dialog = AddServerDialog(self)

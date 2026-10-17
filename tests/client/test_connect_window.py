@@ -356,3 +356,71 @@ def test_closing_window_stops_discovery_listener(qtbot, tmp_path) -> None:
     window.close()
 
     assert stopped == [True]
+
+
+def test_a_rejected_saved_sign_in_asks_for_a_password(qtbot, monkeypatch, tmp_path) -> None:
+    """A saved token the server no longer accepts (here: every session was ended
+    by the token-hashing update) must lead to the sign-in box, not an app where
+    every request fails with 401."""
+    import httpx
+
+    monkeypatch.setattr(ApiClient, "health", lambda self: {"status": "ok"})
+    monkeypatch.setattr(
+        ApiClient, "get_server_info", lambda self: {"display_name": "Kairos Server"}
+    )
+
+    def rejected(self):
+        request = httpx.Request("GET", "https://192.168.1.10:8000/people/me")
+        raise httpx.HTTPStatusError(
+            "401", request=request, response=httpx.Response(401, request=request)
+        )
+
+    monkeypatch.setattr(ApiClient, "get_my_profile", rejected)
+
+    vm = _isolated_viewmodel(tmp_path)
+    server = vm.add_server(host="192.168.1.10", port=8000)
+    identity_vm = _isolated_identity_viewmodel(tmp_path)
+    identity_vm.set_identity(server.id, 7, "Bob", "tok-old")
+
+    window = _make_window(tmp_path, server_list_vm=vm, identity_vm=identity_vm)
+    qtbot.addWidget(window)
+    asked = []
+    monkeypatch.setattr(window, "_on_sign_in_clicked", lambda: asked.append(True))
+    tile = window._saved_tiles_layout.itemAt(0).widget()
+    qtbot.mouseClick(tile, Qt.MouseButton.LeftButton)
+
+    assert window._app_shell is None
+    assert asked == [True]
+    assert "sign in again" in window.status_label.text()
+    assert window.identity_label.text() == "Not signed in"
+    assert identity_vm.load_cached_identity(server.id) is None
+    assert window.api_client.token is None
+
+
+def test_an_unreachable_profile_check_still_opens_the_app(qtbot, monkeypatch, tmp_path) -> None:
+    """Only a 401 counts as rejected; a slow host shouldn't throw the user out."""
+    import httpx
+
+    monkeypatch.setattr(ApiClient, "health", lambda self: {"status": "ok"})
+    monkeypatch.setattr(
+        ApiClient, "get_server_info", lambda self: {"display_name": "Kairos Server"}
+    )
+    monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
+
+    def slow(self):
+        raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(ApiClient, "get_my_profile", slow)
+
+    vm = _isolated_viewmodel(tmp_path)
+    server = vm.add_server(host="192.168.1.10", port=8000)
+    identity_vm = _isolated_identity_viewmodel(tmp_path)
+    identity_vm.set_identity(server.id, 7, "Bob", "tok-bob")
+
+    window = _make_window(tmp_path, server_list_vm=vm, identity_vm=identity_vm)
+    qtbot.addWidget(window)
+    tile = window._saved_tiles_layout.itemAt(0).widget()
+    qtbot.mouseClick(tile, Qt.MouseButton.LeftButton)
+
+    assert window._app_shell is not None
+    assert identity_vm.load_cached_identity(server.id) is not None
