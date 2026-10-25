@@ -6,7 +6,8 @@ chosen project, two tabs:
 
 * **Tasks**: the task list, and an editor for the chosen (or a new) task:
   title, description, who it's assigned to, start and due dates, status, the
-  tasks it waits on, and its subtasks (tick them off as they're done).
+  tasks it waits on, and its subtasks (tick them off as they're done, and
+  give each one an assignee and dates).
 * **Gantt**: the project's timeline (``client.views.gantt_chart``). Clicking a
   bar opens that task on the Tasks tab.
 
@@ -58,6 +59,8 @@ from client.views.widgets import ElidedLabel, ErrorLabel
 from shared.date_rules import EARLIEST_TASK_DATE, LATEST_TASK_DATE
 
 ID_ROLE = Qt.ItemDataRole.UserRole
+#: A subtask item's bare title (its text also shows the assignee and dates).
+TITLE_ROLE = Qt.ItemDataRole.UserRole + 1
 
 #: Task list columns.
 TASK_COLUMNS = ("Title", "Assigned to", "Start", "Due", "Status", "Subtasks")
@@ -70,6 +73,21 @@ def show_date(value: str | None) -> str:
     """An API date for display ("Nov 02, 2026"), or "" when unset."""
     day = parse_day(value)
     return day.strftime("%b %d, %Y") if day else ""
+
+
+def subtask_label(subtask: dict) -> str:
+    """A subtask's line in the list: its title, then who has it and when, if set."""
+    details = []
+    if subtask["assignee"]:
+        details.append(subtask["assignee"]["name"])
+    start, due = parse_day(subtask["start_date"]), parse_day(subtask["due_date"])
+    if start and due:
+        details.append(f"{start:%b %d} - {due:%b %d}")
+    elif due:
+        details.append(f"due {due:%b %d}")
+    elif start:
+        details.append(f"from {start:%b %d}")
+    return subtask["title"] + (f"  ({', '.join(details)})" if details else "")
 
 
 def _qdate(value: date) -> QDate:
@@ -224,6 +242,7 @@ class ProjectsView(QWidget):
             self.remove_dependency_button,
             self.add_subtask_button,
             self.delete_subtask_button,
+            self.save_subtask_button,
         ]
 
         # ------------------------------------------------------- wiring
@@ -247,6 +266,16 @@ class ProjectsView(QWidget):
         self.subtask_input.returnPressed.connect(self._add_subtask)
         self.delete_subtask_button.clicked.connect(self._delete_subtask)
         self.subtasks_list.itemChanged.connect(self._on_subtask_ticked)
+        self.subtasks_list.currentItemChanged.connect(self._on_subtask_selected)
+        self.save_subtask_button.clicked.connect(self._save_subtask)
+        for signal in (
+            self.subtask_assignee_combo.currentIndexChanged,
+            self.subtask_start_input.check.toggled,
+            self.subtask_start_input.edit.dateChanged,
+            self.subtask_due_input.check.toggled,
+            self.subtask_due_input.edit.dateChanged,
+        ):
+            signal.connect(self._mark_subtask_dirty)
         for signal in (
             self.title_input.textEdited,
             self.description_input.textChanged,
@@ -341,6 +370,21 @@ class ProjectsView(QWidget):
         subtask_row.addWidget(self.subtask_input, stretch=1)
         subtask_row.addWidget(self.add_subtask_button)
 
+        # The selected subtask's assignee and dates (goals 4 and 6).
+        self.subtask_assignee_combo = QComboBox()
+        self.subtask_start_input = OptionalDateEdit("Start")
+        self.subtask_due_input = OptionalDateEdit("Due")
+        self.save_subtask_button = QPushButton("Save subtask")
+        self.subtask_editor = QGroupBox("Selected subtask")
+        subtask_form = QFormLayout(self.subtask_editor)
+        subtask_form.addRow("Assigned to", self.subtask_assignee_combo)
+        subtask_form.addRow("Dates", self.subtask_start_input)
+        subtask_form.addRow("", self.subtask_due_input)
+        subtask_form.addRow("", self.save_subtask_button)
+        #: Which subtask the small editor holds, and whether the user has changed it.
+        self._subtask_form_id: int | None = None
+        self._subtask_dirty = False
+
         #: Dependencies and subtasks need a saved task.
         self.saved_task_panel = QWidget()
         saved = QVBoxLayout(self.saved_task_panel)
@@ -355,6 +399,7 @@ class ProjectsView(QWidget):
         saved.addWidget(self.subtasks_list)
         saved.addLayout(subtask_row)
         saved.addWidget(self.delete_subtask_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        saved.addWidget(self.subtask_editor)
 
         editor = QVBoxLayout(self.editor_box)
         editor.addLayout(form)
@@ -594,15 +639,60 @@ class ProjectsView(QWidget):
                 self.dependency_combo.addItem(task["title"], task["id"])
 
     def _fill_subtasks(self) -> None:
-        """The open task's subtasks as tick boxes."""
+        """The open task's subtasks as tick boxes, keeping the selected one selected."""
+        selected = self._selected_subtask_id()
         self.subtasks_list.clear()
         for subtask in (self.viewmodel.task or {}).get("subtasks", []):
-            item = QListWidgetItem(subtask["title"])
+            item = QListWidgetItem(subtask_label(subtask))
             item.setData(ID_ROLE, subtask["id"])
+            item.setData(TITLE_ROLE, subtask["title"])
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             done = subtask["status"] == "done"
             item.setCheckState(Qt.CheckState.Checked if done else Qt.CheckState.Unchecked)
             self.subtasks_list.addItem(item)
+            if subtask["id"] == selected:
+                self.subtasks_list.setCurrentItem(item)
+        self._fill_subtask_editor()
+
+    def _selected_subtask(self) -> dict | None:
+        """The subtask selected in the list, as the server last sent it."""
+        chosen = self._selected_subtask_id()
+        subtasks = (self.viewmodel.task or {}).get("subtasks", [])
+        return next((s for s in subtasks if s["id"] == chosen), None)
+
+    def _selected_subtask_id(self) -> int | None:
+        """The id of the subtask selected in the list, or None."""
+        item = self.subtasks_list.currentItem()
+        return item.data(ID_ROLE) if item else None
+
+    def _fill_subtask_editor(self) -> None:
+        """Show the selected subtask's assignee and dates, unless the user is
+        editing that same subtask (so an automatic refresh can't wipe it)."""
+        subtask = self._selected_subtask()
+        self.subtask_editor.setVisible(subtask is not None)
+        if subtask is None:
+            self._subtask_form_id = None
+            self._subtask_dirty = False
+            return
+        if subtask["id"] == self._subtask_form_id and self._subtask_dirty:
+            return
+        was_filling, self._filling = self._filling, True
+        try:
+            self.subtask_editor.setTitle(f"Subtask: {subtask['title']}")
+            self.subtask_assignee_combo.clear()
+            self.subtask_assignee_combo.addItem("Unassigned", None)
+            team = self.viewmodel.team
+            for member in team["members"] if team else []:
+                self.subtask_assignee_combo.addItem(member["name"], member["id"])
+            current = subtask["assignee"]["id"] if subtask["assignee"] else None
+            index = self.subtask_assignee_combo.findData(current)
+            self.subtask_assignee_combo.setCurrentIndex(max(0, index))
+            self.subtask_start_input.set_value(parse_day(subtask["start_date"]))
+            self.subtask_due_input.set_value(parse_day(subtask["due_date"]))
+        finally:
+            self._filling = was_filling
+        self._subtask_form_id = subtask["id"]
+        self._subtask_dirty = False
 
     def _fill_unscheduled(self) -> None:
         """Name the tasks the chart can't draw because they have no dates."""
@@ -635,6 +725,11 @@ class ProjectsView(QWidget):
         """Disable the controls while a request is in flight."""
         for widget in [*self._buttons, self.team_combo, self.projects_list, self.tasks_table]:
             widget.setEnabled(not busy)
+
+    def _mark_subtask_dirty(self, *_args) -> None:
+        """The user changed the subtask editor (ignored while the screen refills it)."""
+        if not self._filling:
+            self._subtask_dirty = True
 
     def _mark_dirty(self, *_args) -> None:
         """The user changed an editor field (ignored while the screen refills it)."""
@@ -757,10 +852,30 @@ class ProjectsView(QWidget):
             done = item.checkState() == Qt.CheckState.Checked
             self.viewmodel.set_subtask_done(item.data(ID_ROLE), done)
 
+    def _on_subtask_selected(self, *_args) -> None:
+        """A different subtask was picked: show its assignee and dates."""
+        if not self._filling:
+            self._subtask_dirty = False
+            self._fill_subtask_editor()
+
+    def _save_subtask(self) -> None:
+        """Save the editor's assignee and dates to the selected subtask."""
+        subtask_id = self._selected_subtask_id()
+        if subtask_id is None:
+            return
+        self.viewmodel.save_subtask(
+            subtask_id,
+            assignee_id=self.subtask_assignee_combo.currentData(),
+            start_date=self.subtask_start_input.value(),
+            due_date=self.subtask_due_input.value(),
+        )
+        if self.viewmodel.busy:  # accepted: let the reload refill the editor
+            self._subtask_dirty = False
+
     def _delete_subtask(self) -> None:
         """After confirming, delete the selected subtask."""
         item = self.subtasks_list.currentItem()
-        if item and self.confirm("Delete subtask", f"Delete {item.text()}?"):
+        if item and self.confirm("Delete subtask", f"Delete {item.data(TITLE_ROLE)}?"):
             self.viewmodel.delete_subtask(item.data(ID_ROLE))
 
     #: Set by the home screen when its offline banner already reports

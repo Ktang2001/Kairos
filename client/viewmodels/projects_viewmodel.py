@@ -48,12 +48,21 @@ def task_fields_problem(fields: dict) -> str | None:
         return problem
     if len(fields.get("description") or "") > MAX_DESCRIPTION_LENGTH:
         return f"The description can be at most {MAX_DESCRIPTION_LENGTH} characters."
-    start, due = fields.get("start_date"), fields.get("due_date")
+    return dates_problem(fields.get("start_date"), fields.get("due_date"))
+
+
+def dates_problem(start: date | None, due: date | None) -> str | None:
+    """A message if a start/due pair can't be saved, else None. Matches the server's rules."""
     if not (date_in_range(start) and date_in_range(due)):
         return DATE_RANGE_MESSAGE
     if start is not None and due is not None and start > due:
         return "The start date can't be after the due date."
     return None
+
+
+def _iso(value: date | None) -> str | None:
+    """A date as the API writes it, or None."""
+    return value.isoformat() if value else None
 
 
 def to_request(fields: dict) -> dict:
@@ -245,6 +254,25 @@ class ProjectsViewModel(QObject):
         """Tick or untick a subtask."""
         status = "done" if done else "todo"
         self._run(lambda client: client.update_subtask(subtask_id, status=status))
+
+    def save_subtask(
+        self,
+        subtask_id: int,
+        *,
+        assignee_id: int | None,
+        start_date: date | None,
+        due_date: date | None,
+    ) -> None:
+        """Assign a subtask and set its dates (None clears them)."""
+        if problem := dates_problem(start_date, due_date):
+            self.error_changed.emit(problem)
+            return
+        body = {
+            "assignee_id": assignee_id,
+            "start_date": _iso(start_date),
+            "due_date": _iso(due_date),
+        }
+        self._run(lambda client: client.update_subtask(subtask_id, **body))
 
     def delete_subtask(self, subtask_id: int) -> None:
         """Delete a subtask."""

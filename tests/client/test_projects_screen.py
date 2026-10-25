@@ -539,3 +539,111 @@ def test_a_big_project_redraws_quickly(qtbot: QtBot) -> None:
     assert time.perf_counter() - started < 3
     assert view.tasks_table.rowCount() == 1000
     assert view.tasks_table.item(999, 0).text() == "Task 1000"
+
+
+# ------------------------------------- subtask assignee and dates (goals 4, 6)
+
+
+def _open_task_with_subtask(qtbot: QtBot, crew: Crew, person: Person) -> tuple:
+    """The screen for ``person`` with task "Launch" open and its one subtask selected."""
+    project = _project_with_tasks(crew, {"title": "Launch"})
+    task_id = crew.lead.client.list_tasks(project["id"])[0]["id"]
+    crew.lead.client.create_subtask(task_id, title="Write announcement")
+    view = _open(qtbot, person)
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+    view.subtasks_list.setCurrentRow(0)
+    return view, project, task_id
+
+
+def test_the_subtask_editor_appears_only_for_a_selected_subtask(qtbot: QtBot, crew: Crew) -> None:
+    project = _project_with_tasks(crew, {"title": "Launch"})
+    task_id = crew.lead.client.list_tasks(project["id"])[0]["id"]
+    crew.lead.client.create_subtask(task_id, title="Write announcement")
+    view = _open(qtbot, crew.member)
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+    assert view.subtask_editor.isHidden()
+    view.subtasks_list.setCurrentRow(0)
+    assert not view.subtask_editor.isHidden()
+    names = [
+        view.subtask_assignee_combo.itemText(i) for i in range(view.subtask_assignee_combo.count())
+    ]
+    assert names == ["Unassigned", "Lena", "Max"]
+
+
+def test_a_member_assigns_and_dates_a_subtask(qtbot: QtBot, crew: Crew) -> None:
+    view, _project, task_id = _open_task_with_subtask(qtbot, crew, crew.member)
+    combo = view.subtask_assignee_combo
+    combo.setCurrentIndex(combo.findData(crew.member.user["id"]))
+    view.subtask_start_input.set_value(date(2026, 11, 2))
+    view.subtask_due_input.set_value(date(2026, 11, 4))
+    view.save_subtask_button.click()
+    _settle(qtbot, view)
+
+    [subtask] = crew.lead.client.get_task(task_id)["subtasks"]
+    assert subtask["assignee"]["id"] == crew.member.user["id"]
+    assert (subtask["start_date"], subtask["due_date"]) == ("2026-11-02", "2026-11-04")
+    assert view.subtasks_list.item(0).text() == "Write announcement  (Max, Nov 02 - Nov 04)"
+    # Still selected after the reload, showing what was saved.
+    assert view.subtasks_list.currentRow() == 0
+    assert combo.currentData() == crew.member.user["id"]
+    # The dated subtask now has its own row on the Gantt chart.
+    rows = view.gantt_chart.rows
+    assert [(r["kind"], r["title"]) for r in rows] == [("subtask", "Write announcement")]
+
+
+def test_clearing_a_subtasks_assignee_and_dates(qtbot: QtBot, crew: Crew) -> None:
+    project = _project_with_tasks(crew, {"title": "Launch"})
+    task_id = crew.lead.client.list_tasks(project["id"])[0]["id"]
+    crew.lead.client.create_subtask(
+        task_id, title="Step", assignee_id=crew.member.user["id"], due_date="2026-11-04"
+    )
+    view = _open(qtbot, crew.member)
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+    view.subtasks_list.setCurrentRow(0)
+    assert view.subtasks_list.item(0).text() == "Step  (Max, due Nov 04)"
+
+    view.subtask_assignee_combo.setCurrentIndex(0)
+    view.subtask_due_input.set_value(None)
+    view.save_subtask_button.click()
+    _settle(qtbot, view)
+    [subtask] = crew.lead.client.get_task(task_id)["subtasks"]
+    assert subtask["assignee"] is None and subtask["due_date"] is None
+    assert view.subtasks_list.item(0).text() == "Step"
+
+
+def test_subtask_dates_out_of_order_are_refused_before_sending(qtbot: QtBot, crew: Crew) -> None:
+    view, _project, task_id = _open_task_with_subtask(qtbot, crew, crew.member)
+    view.subtask_start_input.set_value(date(2026, 11, 9))
+    view.subtask_due_input.set_value(date(2026, 11, 1))
+    view.save_subtask_button.click()
+    assert not view.viewmodel.busy
+    assert view.error_label.text() == "The start date can't be after the due date."
+    assert crew.lead.client.get_task(task_id)["subtasks"][0]["start_date"] is None
+
+
+def test_a_refresh_keeps_unsaved_subtask_edits(qtbot: QtBot, crew: Crew) -> None:
+    view, _project, _task_id = _open_task_with_subtask(qtbot, crew, crew.member)
+    view.subtask_due_input.set_value(date(2026, 12, 1))
+    view.subtask_due_input.check.toggled.emit(True)  # as a click would
+    view.viewmodel.refresh()
+    _settle(qtbot, view)
+    assert view.subtask_due_input.value() == date(2026, 12, 1)
+
+
+def test_deleting_a_subtask_names_it_without_its_details(qtbot: QtBot, crew: Crew) -> None:
+    project = _project_with_tasks(crew, {"title": "Launch"})
+    task_id = crew.lead.client.list_tasks(project["id"])[0]["id"]
+    crew.lead.client.create_subtask(task_id, title="Step", due_date="2026-11-04")
+    view = _open(qtbot, crew.lead)
+    asked: list[str] = []
+    view.confirm = lambda _title, question: asked.append(question) or True
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+    view.subtasks_list.setCurrentRow(0)
+    view.delete_subtask_button.click()
+    _settle(qtbot, view)
+    assert asked == ["Delete Step?"]
+    assert crew.lead.client.get_task(task_id)["subtasks"] == []
