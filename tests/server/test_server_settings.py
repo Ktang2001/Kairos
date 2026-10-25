@@ -45,6 +45,12 @@ def test_put_server_info_rejects_unwritable_upload_root(
     )
 
     assert response.status_code == 400
+    # A general reason, without the operating system's error or the host's
+    # paths (found in a code review: they used to be sent back).
+    detail = response.json()["detail"]
+    assert "can't be used" in detail
+    assert str(tmp_path) not in detail
+    assert "Errno" not in detail
 
     info = client.get("/server/info").json()
     assert info["display_name"] == "Test Server"

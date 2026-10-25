@@ -234,7 +234,7 @@ def test_login_with_2fa_right_after_login_hits_resend_cooldown_cleanly(
 
 
 def test_login_with_2fa_returns_a_clean_503_when_email_sending_fails(
-    client: TestClient, sent_codes, monkeypatch
+    client: TestClient, sent_codes, monkeypatch, caplog
 ) -> None:
     """Regression test: if SMTP isn't configured (or fails for any reason), this
     must 503 with a clear message, not crash with an unhandled 500 (reproduces
@@ -251,7 +251,11 @@ def test_login_with_2fa_returns_a_clean_503_when_email_sending_fails(
     )
 
     assert response.status_code == 503
-    assert "KAIROS_SMTP_USER" in response.json()["detail"]
+    # A general message for the person signing in; the configuration details
+    # stay in the server log (found in a code review: they used to be sent back).
+    assert "KAIROS_SMTP_USER" not in response.json()["detail"]
+    assert "couldn't send your verification email" in response.json()["detail"]
+    assert "KAIROS_SMTP_USER" in caplog.text
 
 
 def test_verify_code_rejects_wrong_code(client: TestClient, sent_codes) -> None:

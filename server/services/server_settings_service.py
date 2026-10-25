@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from server.models.server_settings import ServerSettings
+
+logger = logging.getLogger(__name__)
 
 
 def get_settings(db: Session) -> ServerSettings:
@@ -35,7 +38,13 @@ def update_settings(
             probe.touch()
             probe.unlink()
         except OSError as exc:
-            raise ValueError(f"upload_root is not writable: {exc}") from exc
+            # The OS error quotes paths on the host; this message can reach a
+            # remote admin's client, so the details go to the server log only.
+            logger.error("Upload folder %s is not usable: %s", resolved, exc)
+            raise ValueError(
+                "That upload folder can't be used: it doesn't exist and can't be created, "
+                "or the server isn't allowed to write to it."
+            ) from exc
         settings.upload_root = str(resolved)
 
     if display_name is not None:

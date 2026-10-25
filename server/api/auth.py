@@ -1,3 +1,4 @@
+import logging
 import smtplib
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,11 +21,21 @@ from server.services.auth_service import TooManyAttemptsError
 from server.services.verification_service import ResendCooldownError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 # Anything send_verification_code can raise when the host hasn't configured SMTP
 # correctly (missing env vars - RuntimeError) or the send itself fails (bad
 # credentials, can't reach smtp.gmail.com, etc.) - all surfaced as a clean 503
 # rather than an unhandled 500 (see server/email_sender.py).
+#
+# The reply is deliberately general: the error's own text names the host's
+# setting variables or quotes the mail server's reply, which the person signing
+# in has no use for and shouldn't see (found in a code review). The details go
+# to the server's log, where the host can read them.
+EMAIL_SEND_FAILED = (
+    "We couldn't send your verification email right now. Please try again later, "
+    "or ask whoever runs this server to check its email settings."
+)
 _EMAIL_SEND_ERRORS = (RuntimeError, smtplib.SMTPException, OSError)
 
 
@@ -32,9 +43,8 @@ def _send_code_or_503(email: str, code: str) -> None:
     try:
         email_sender.send_verification_code(email, code)
     except _EMAIL_SEND_ERRORS as exc:
-        raise HTTPException(
-            status_code=503, detail=f"Could not send the verification email: {exc}"
-        ) from exc
+        logger.error("Sending the verification email failed: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail=EMAIL_SEND_FAILED) from exc
 
 
 def _issue_auth_result(db: Session, user) -> AuthResult:
