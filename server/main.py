@@ -45,6 +45,7 @@ from server.api.tasks import router as tasks_router
 from server.api.teams import router as teams_router
 from server.api.users import router as users_router
 from server.api.ws_chat import router as ws_chat_router
+from server.db.schema_check import database_problem
 from server.db.session import get_db
 from server.services import auth_service
 
@@ -67,6 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_gen = get_session()
     db = next(session_gen)
     try:
+        # A database that was never upgraded would start fine and then answer
+        # 500 on the pages that use the newer tables: refuse to start instead.
+        if problem := database_problem(db.connection()):
+            raise RuntimeError(problem)
         auth_service.ensure_roles(db)
     except OperationalError as exc:
         raise RuntimeError(
