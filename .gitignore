@@ -36,3 +36,6 @@ server/db/uploads/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# LibreOffice/OpenOffice lock files (left behind while a document is open)
+.~lock.*#
