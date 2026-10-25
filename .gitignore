@@ -39,3 +39,5 @@ htmlcov/
 
 # LibreOffice/OpenOffice lock files (left behind while a document is open)
 .~lock.*#
+# Saved test-run output (run the tests instead of committing their results)
+test_results*.txt
