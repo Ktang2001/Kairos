@@ -76,11 +76,6 @@ def _lockout_remaining(email: str) -> float:
     return max(0.0, attempts[-1] + lockout - now)
 
 
-def _is_cooling_down(email: str) -> bool:
-    """True while `email` is locked out after too many wrong passwords."""
-    return _lockout_remaining(email) > 0
-
-
 def _record_failed_attempt(email: str) -> None:
     """Note one wrong password for `email`, pruning the table if it has grown large."""
     now = time.monotonic()
