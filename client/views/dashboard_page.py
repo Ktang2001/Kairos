@@ -122,7 +122,7 @@ class DashboardPage(QWidget):
 
         self.clock = ClockWidget()
 
-        self.stat_tasks = _StatTile("My Open Tasks")
+        self.stat_tasks = _StatTile("My Open Work")
         self.stat_projects = _StatTile("Active Projects")
         self.stat_due_soon = _StatTile("Due Soon")
         self.stat_overdue = _StatTile("Overdue")
@@ -177,18 +177,27 @@ class DashboardPage(QWidget):
     def show_data(self, data: dict) -> None:
         """Fill every tile, list and calendar mark from a /dashboard response."""
         mine, overview = data["my_work"], data["overview"]
-        self.stat_tasks.set_value(str(mine["open"]))
+        # Subtasks assigned to you count as your work too (goal 4). ``get``:
+        # a server from before subtask figures existed simply sends none.
+        subtasks = mine.get("upcoming_subtasks", [])
+        self.stat_tasks.set_value(str(mine["open"] + mine.get("subtasks_open", 0)))
         self.stat_projects.set_value(str(overview["active_projects"]))
-        self.stat_due_soon.set_value(str(mine["due_soon"]))
-        self.stat_overdue.set_value(str(mine["overdue"]))
+        self.stat_due_soon.set_value(str(mine["due_soon"] + mine.get("subtasks_due_soon", 0)))
+        self.stat_overdue.set_value(str(mine["overdue"] + mine.get("subtasks_overdue", 0)))
 
         today = data["today"]
+        dated = [
+            (task["due_date"], f"{task['title']} ({task['project_name']})")
+            for task in mine["upcoming"]
+        ]
+        dated += [
+            (s["due_date"], f"{s['title']} (subtask of {s['task_title']}, {s['project_name']})")
+            for s in subtasks
+        ]
         deadlines = []
-        for task in mine["upcoming"]:
-            late = "OVERDUE - " if task["due_date"] < today else ""
-            deadlines.append(
-                f"{late}{_short(task['due_date'])}: {task['title']} ({task['project_name']})"
-            )
+        for due, what in sorted(dated, key=lambda pair: pair[0]):
+            late = "OVERDUE - " if due < today else ""
+            deadlines.append(f"{late}{_short(due)}: {what}")
         self.due_dates_panel.set_items(deadlines)
 
         progress = []
@@ -203,7 +212,7 @@ class DashboardPage(QWidget):
             progress.append(line)
         self.tasks_panel.set_items(progress)
 
-        self._mark_deadlines([task["due_date"] for task in mine["upcoming"]])
+        self._mark_deadlines([due for due, _what in dated])
         self.as_of_label.setText(
             f'Figures as of {_short(today)}. "Due soon" means within '
             f"{data['due_soon_days']} days. Your deadlines are shaded on the calendar."

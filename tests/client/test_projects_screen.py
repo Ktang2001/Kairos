@@ -647,3 +647,58 @@ def test_deleting_a_subtask_names_it_without_its_details(qtbot: QtBot, crew: Cre
     _settle(qtbot, view)
     assert asked == ["Delete Step?"]
     assert crew.lead.client.get_task(task_id)["subtasks"] == []
+
+
+# ------------------------------------------------- finding your work (goal 4)
+
+
+def test_only_my_work_shows_my_tasks_and_tasks_holding_my_subtasks(
+    qtbot: QtBot, crew: Crew
+) -> None:
+    me, lead = crew.member.user["id"], crew.lead.user["id"]
+    project = _project_with_tasks(
+        crew,
+        {"title": "Mine", "assignee_id": me},
+        {"title": "Lena's, with my subtask", "assignee_id": lead},
+        {"title": "Lena's only", "assignee_id": lead},
+        {"title": "Nobody's"},
+    )
+    tasks = {t["title"]: t for t in crew.lead.client.list_tasks(project["id"])}
+    crew.lead.client.create_subtask(
+        tasks["Lena's, with my subtask"]["id"], title="Step", assignee_id=me
+    )
+    view = _open(qtbot, crew.member)
+    assert len(_table_titles(view)) == 4
+
+    view.only_mine_check.setChecked(True)
+    assert sorted(_table_titles(view)) == ["Lena's, with my subtask", "Mine"]
+    row = _table_titles(view).index("Lena's, with my subtask")
+    assert view.tasks_table.item(row, 1).text() == "Lena (your subtasks)"
+
+    # The filter survives the automatic refresh, and can be switched off.
+    view.viewmodel.refresh()
+    _settle(qtbot, view)
+    assert sorted(_table_titles(view)) == ["Lena's, with my subtask", "Mine"]
+    view.only_mine_check.setChecked(False)
+    assert len(_table_titles(view)) == 4
+
+
+def test_only_my_work_keeps_the_open_task_selected(qtbot: QtBot, crew: Crew) -> None:
+    me = crew.member.user["id"]
+    _project_with_tasks(crew, {"title": "Other"}, {"title": "Mine", "assignee_id": me})
+    view = _open(qtbot, crew.member)
+    view.tasks_table.selectRow(_table_titles(view).index("Mine"))
+    _settle(qtbot, view)
+    view.only_mine_check.setChecked(True)
+    assert _table_titles(view) == ["Mine"]
+    assert view.tasks_table.selectedItems()[0].text() == "Mine"
+    assert view.viewmodel.task["title"] == "Mine"
+
+
+def test_is_my_work_copes_with_an_older_server() -> None:
+    from client.views.projects_view import is_my_work
+
+    old_style = {"assignee": None}  # no subtask_assignee_ids field
+    assert not is_my_work(old_style, 7)
+    assert is_my_work({"assignee": {"id": 7}}, 7)
+    assert not is_my_work({"assignee": {"id": 7}}, None)

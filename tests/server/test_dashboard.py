@@ -88,6 +88,10 @@ def test_a_user_with_no_teams_gets_an_all_zero_dashboard(
         "overdue": 0,
         "due_soon": 0,
         "upcoming": [],
+        "subtasks_open": 0,
+        "subtasks_overdue": 0,
+        "subtasks_due_soon": 0,
+        "upcoming_subtasks": [],
     }
     assert body["projects"] == []
     assert body["workload"] == []
@@ -368,3 +372,71 @@ def test_leaving_a_team_removes_its_work_from_your_dashboard(
     body = _dashboard(client, member)
     assert body["overview"]["teams"] == 0
     assert body["my_work"]["open"] == 0
+
+
+# ------------------------------------------------------- assigned subtasks
+
+
+def _add_subtask(client: TestClient, account: Account, task_id: int, **fields) -> None:
+    response = client.post(
+        f"/tasks/{task_id}/subtasks", json={"title": "Step", **fields}, headers=account.headers
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_subtasks_assigned_to_me_count_as_my_work(
+    client: TestClient, lead: Account, member: Account, project: dict, add_task: Callable
+) -> None:
+    """Found while finishing goal 4: a subtask assigned to someone other than its
+    task's assignee appeared nowhere on their dashboard."""
+    task = add_task(project["id"], title="Launch", assignee_id=lead.id)
+    _add_subtask(client, member, task["id"], assignee_id=member.id, due_date=_days(-2))
+    _add_subtask(client, member, task["id"], assignee_id=member.id, due_date=_days(3))
+    _add_subtask(client, member, task["id"], assignee_id=member.id)  # undated
+    _add_subtask(client, member, task["id"], assignee_id=member.id, status="done")
+    _add_subtask(client, member, task["id"], assignee_id=lead.id, due_date=_days(1))
+
+    mine = _dashboard(client, member)["my_work"]
+    assert mine["open"] == 0  # no tasks of my own
+    assert (mine["subtasks_open"], mine["subtasks_overdue"], mine["subtasks_due_soon"]) == (3, 1, 1)
+    assert [
+        (s["due_date"], s["task_title"], s["project_name"]) for s in mine["upcoming_subtasks"]
+    ] == [
+        (_days(-2), "Launch", "Website"),
+        (_days(3), "Launch", "Website"),
+    ]
+    assert mine["upcoming_subtasks"][0]["task_id"] == task["id"]
+
+
+def test_my_upcoming_subtasks_are_capped(
+    client: TestClient, member: Account, project: dict, add_task: Callable
+) -> None:
+    task = add_task(project["id"])
+    for n in range(UPCOMING_LIMIT + 3):
+        _add_subtask(client, member, task["id"], assignee_id=member.id, due_date=_days(n))
+    mine = _dashboard(client, member)["my_work"]
+    assert mine["subtasks_open"] == UPCOMING_LIMIT + 3
+    assert [s["due_date"] for s in mine["upcoming_subtasks"]] == [
+        _days(n) for n in range(UPCOMING_LIMIT)
+    ]
+
+
+def test_workload_counts_open_subtasks(
+    client: TestClient, lead: Account, member: Account, project: dict, add_task: Callable
+) -> None:
+    task = add_task(project["id"], assignee_id=lead.id)
+    _add_subtask(client, member, task["id"], assignee_id=member.id)
+    _add_subtask(client, member, task["id"], assignee_id=member.id)
+    _add_subtask(client, member, task["id"], assignee_id=member.id, status="done")
+    rows = {w["user"]["id"]: w for w in _dashboard(client, lead)["workload"]}
+    assert (rows[member.id]["open"], rows[member.id]["open_subtasks"]) == (0, 2)
+    assert (rows[lead.id]["open"], rows[lead.id]["open_subtasks"]) == (1, 0)
+
+
+def test_subtasks_in_another_teams_project_are_not_shown(
+    client: TestClient, member: Account, outsider: Account, project: dict, add_task: Callable
+) -> None:
+    task = add_task(project["id"])
+    _add_subtask(client, member, task["id"], assignee_id=member.id, due_date=_days(1))
+    mine = _dashboard(client, outsider)["my_work"]
+    assert (mine["subtasks_open"], mine["upcoming_subtasks"]) == (0, [])

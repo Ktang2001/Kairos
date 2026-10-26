@@ -20,6 +20,20 @@ class TaskBrief(BaseModel):
     due_date: date | None
 
 
+class SubtaskBrief(BaseModel):
+    """Just enough of a subtask to show in a "coming up" list: what, in which
+    task and project, and when."""
+
+    id: int
+    title: str
+    task_id: int
+    task_title: str
+    project_id: int
+    project_name: str
+    status: TaskStatus
+    due_date: date | None
+
+
 class Overview(BaseModel):
     """Totals across every team the viewer can see."""
 
@@ -38,7 +52,12 @@ class Overview(BaseModel):
 
 
 class MyWork(BaseModel):
-    """The viewer's own open tasks."""
+    """The viewer's own open tasks, and the open subtasks assigned to them.
+
+    A subtask can be assigned to someone other than its task's assignee, so
+    both are counted: without the subtask figures, work assigned only as a
+    subtask appeared nowhere on the dashboard.
+    """
 
     open: int
     in_progress: int
@@ -46,6 +65,11 @@ class MyWork(BaseModel):
     due_soon: int
     #: The viewer's open tasks with a due date, soonest first (overdue first).
     upcoming: list[TaskBrief]
+    subtasks_open: int
+    subtasks_overdue: int
+    subtasks_due_soon: int
+    #: The viewer's open subtasks with a due date, soonest first (overdue first).
+    upcoming_subtasks: list[SubtaskBrief]
 
 
 class ProjectStats(BaseModel):
@@ -61,11 +85,12 @@ class ProjectStats(BaseModel):
 
 
 class Workload(BaseModel):
-    """One person's open tasks across the teams the viewer can see."""
+    """One person's open tasks (and open subtasks) across the teams the viewer can see."""
 
     user: UserOut
     open: int
     overdue: int
+    open_subtasks: int
 
 
 class DashboardOut(BaseModel):

@@ -600,3 +600,16 @@ def test_invisible_characters_are_removed_from_titles(
     )
     assert response.status_code == 201
     assert response.json()["title"] == "Write copy"
+
+
+def test_task_listings_say_who_holds_the_subtasks(
+    client: TestClient, lead: Account, member: Account, project: dict, task: dict
+) -> None:
+    """So the client can show someone the work assigned to them inside other tasks."""
+    url = f"/tasks/{task['id']}/subtasks"
+    for assignee in (member.id, lead.id, member.id, None):
+        client.post(url, json={"title": "Step", "assignee_id": assignee}, headers=member.headers)
+    listed = client.get(f"/projects/{project['id']}/tasks", headers=member.headers).json()
+    assert listed[0]["subtask_assignee_ids"] == sorted({member.id, lead.id})
+    detail = client.get(f"/tasks/{task['id']}", headers=member.headers).json()
+    assert detail["subtask_assignee_ids"] == sorted({member.id, lead.id})

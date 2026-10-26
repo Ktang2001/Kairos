@@ -75,6 +75,16 @@ def show_date(value: str | None) -> str:
     return day.strftime("%b %d, %Y") if day else ""
 
 
+def is_my_work(task: dict, my_id: int | None) -> bool:
+    """True if the task, or any of its subtasks, is assigned to ``my_id``."""
+    if my_id is None:
+        return False
+    if task["assignee"] and task["assignee"]["id"] == my_id:
+        return True
+    # ``get``: a server from before this field existed sends none.
+    return my_id in task.get("subtask_assignee_ids", [])
+
+
 def subtask_label(subtask: dict) -> str:
     """A subtask's line in the list: its title, then who has it and when, if set."""
     details = []
@@ -258,6 +268,7 @@ class ProjectsView(QWidget):
 
         self.tasks_table.itemSelectionChanged.connect(self._on_task_clicked)
         self.new_task_button.clicked.connect(self._start_new_task)
+        self.only_mine_check.toggled.connect(self._on_only_mine_toggled)
         self.save_task_button.clicked.connect(self._save_task)
         self.delete_task_button.clicked.connect(self._delete_task)
         self.add_dependency_button.clicked.connect(self._add_dependency)
@@ -314,12 +325,18 @@ class ProjectsView(QWidget):
         for column in range(1, len(TASK_COLUMNS)):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.new_task_button = QPushButton("New task")
+        #: Show only tasks assigned to you, or with subtasks assigned to you.
+        self.only_mine_check = QCheckBox("Only my work")
+        list_buttons = QHBoxLayout()
+        list_buttons.addWidget(self.new_task_button)
+        list_buttons.addStretch()
+        list_buttons.addWidget(self.only_mine_check)
 
         list_panel = QWidget()
         list_layout = QVBoxLayout(list_panel)
         list_layout.setContentsMargins(0, 0, 0, 0)
         list_layout.addWidget(self.tasks_table)
-        list_layout.addWidget(self.new_task_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        list_layout.addLayout(list_buttons)
 
         # The editor.
         self.editor_box = QGroupBox("New task")
@@ -548,28 +565,41 @@ class ProjectsView(QWidget):
         automatic refresh).
         """
         vm = self.viewmodel
+        tasks = self.shown_tasks()
         table = self.tasks_table
         header = table.horizontalHeader()
         table.setUpdatesEnabled(False)
         for column in range(1, len(TASK_COLUMNS)):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
         try:
-            self._fill_task_rows(vm.tasks)
+            self._fill_task_rows(tasks)
         finally:
             for column in range(1, len(TASK_COLUMNS)):
                 header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
             table.setUpdatesEnabled(True)
         table.clearSelection()
         if vm.task_id is not None:
-            for row, task in enumerate(vm.tasks):
+            for row, task in enumerate(tasks):
                 if task["id"] == vm.task_id:
                     table.selectRow(row)
+
+    def shown_tasks(self) -> list[dict]:
+        """The tasks the table shows: all of them, or only your work when ticked."""
+        tasks = self.viewmodel.tasks
+        if not self.only_mine_check.isChecked():
+            return tasks
+        my_id = self.viewmodel.me.get("id")
+        return [task for task in tasks if is_my_work(task, my_id)]
 
     def _fill_task_rows(self, tasks: list[dict]) -> None:
         """Put one row per task into the table."""
         self.tasks_table.setRowCount(len(tasks))
+        my_id = self.viewmodel.me.get("id")
         for row, task in enumerate(tasks):
             assignee = task["assignee"]["name"] if task["assignee"] else "—"
+            task_is_mine = task["assignee"] is not None and task["assignee"]["id"] == my_id
+            if not task_is_mine and is_my_work(task, my_id):
+                assignee += " (your subtasks)"
             subtasks = (
                 f"{task['subtasks_done']}/{task['subtasks_total']}"
                 if task["subtasks_total"]
@@ -773,6 +803,14 @@ class ProjectsView(QWidget):
             f"Delete {project['name']} and all of its tasks? This can't be undone.",
         ):
             self.viewmodel.delete_project()
+
+    def _on_only_mine_toggled(self, _checked: bool) -> None:
+        """Re-show the task list with or without the "Only my work" filter."""
+        was_filling, self._filling = self._filling, True
+        try:
+            self._fill_tasks()
+        finally:
+            self._filling = was_filling
 
     def _on_task_clicked(self) -> None:
         """The user picked a task in the table: open it in the editor."""

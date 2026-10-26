@@ -208,3 +208,41 @@ def test_a_failed_load_shows_the_reason(qtbot, dead_server) -> None:
     page.refresh()  # ignored while the first is running
     qtbot.waitUntil(lambda: not viewmodel.busy, timeout=8000)
     assert "Can't reach the server" in page.error_label.text()
+
+
+def test_subtasks_assigned_to_me_join_my_figures_and_deadlines(qtbot) -> None:
+    from PySide6.QtCore import QDate
+
+    page = DashboardPage()
+    qtbot.addWidget(page)
+    data = _data(
+        subtasks_open=2,
+        subtasks_overdue=1,
+        subtasks_due_soon=1,
+        upcoming_subtasks=[
+            {
+                "id": 9,
+                "title": "Write announcement",
+                "task_id": 2,
+                "task_title": "Launch",
+                "project_id": 5,
+                "project_name": "Website",
+                "status": "todo",
+                "due_date": "2026-11-03",
+            }
+        ],
+    )
+    page.show_data(data)
+    assert page.stat_tasks.value_label.text() == "5"  # 3 tasks + 2 subtasks
+    assert page.stat_due_soon.value_label.text() == "3"
+    assert page.stat_overdue.value_label.text() == "2"
+    deadlines = [
+        page.due_dates_panel.list_widget.item(i).text()
+        for i in range(page.due_dates_panel.list_widget.count())
+    ]
+    assert deadlines == [
+        "OVERDUE - Oct 30: Old report (Website)",
+        "Nov 03: Write announcement (subtask of Launch, Website)",
+        "Nov 04: Launch (Website)",
+    ]
+    assert page.calendar.dateTextFormat(QDate(2026, 11, 3)).background().color().alpha() > 0

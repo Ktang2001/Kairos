@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import selectinload
 
 from server.models.project import Project
+from server.models.subtask import Subtask
 from server.models.task import Task
 from server.models.team import Team
 from server.models.user import User
@@ -25,6 +26,7 @@ from server.schemas.dashboard import (
     MyWork,
     Overview,
     ProjectStats,
+    SubtaskBrief,
     TaskBrief,
     Workload,
 )
@@ -51,18 +53,18 @@ def local_today() -> date:
     return datetime.now(UTC).astimezone().date()
 
 
-def _is_open(task: Task) -> bool:
+def _is_open(task: Task | Subtask) -> bool:
     return task.status != TaskStatus.DONE
 
 
-def _is_overdue(task: Task, today: date) -> bool:
+def _is_overdue(task: Task | Subtask, today: date) -> bool:
     """Open and due *before* today. Due today is not overdue yet; no due date
     never is.
     """
     return _is_open(task) and task.due_date is not None and task.due_date < today
 
 
-def _is_due_soon(task: Task, today: date) -> bool:
+def _is_due_soon(task: Task | Subtask, today: date) -> bool:
     return (
         _is_open(task)
         and task.due_date is not None
@@ -87,12 +89,16 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
     projects = list(
         db.scalars(
             select(Project)
-            .options(selectinload(Project.tasks).selectinload(Task.assignee))
+            .options(
+                selectinload(Project.tasks).selectinload(Task.assignee),
+                selectinload(Project.tasks).selectinload(Task.subtasks),
+            )
             .where(Project.team_id.in_(team_names))
         )
     )
     tasks = [task for project in projects for task in project.tasks]
     open_tasks = [task for task in tasks if _is_open(task)]
+    open_subtasks = [s for task in tasks for s in task.subtasks if _is_open(s)]
     recent_cutoff = now - timedelta(days=RECENT_DAYS)
 
     overview = Overview(
@@ -127,6 +133,7 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
             )
             for t in upcoming[:UPCOMING_LIMIT]
         ],
+        **_my_subtasks(open_subtasks, viewer, project_names, today),
     )
 
     project_stats = []
@@ -155,12 +162,41 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
         overview=overview,
         my_work=my_work,
         projects=project_stats,
-        workload=_workload(teams, open_tasks, today),
+        workload=_workload(teams, open_tasks, open_subtasks, today),
     )
 
 
-def _workload(teams: list[Team], open_tasks: list[Task], today: date) -> list[Workload]:
-    """Open and overdue task counts for every member of the visible teams.
+def _my_subtasks(
+    open_subtasks: list[Subtask], viewer: User, project_names: dict[int, str], today: date
+) -> dict:
+    """The ``MyWork`` fields about the open subtasks assigned to ``viewer``."""
+    mine = [s for s in open_subtasks if s.assignee_id == viewer.id]
+    dated = sorted((s for s in mine if s.due_date is not None), key=lambda s: (s.due_date, s.id))
+    return {
+        "subtasks_open": len(mine),
+        "subtasks_overdue": sum(1 for s in mine if _is_overdue(s, today)),
+        "subtasks_due_soon": sum(1 for s in mine if _is_due_soon(s, today)),
+        "upcoming_subtasks": [
+            SubtaskBrief(
+                id=s.id,
+                title=s.title,
+                task_id=s.task_id,
+                task_title=s.task.title,
+                project_id=s.task.project_id,
+                project_name=project_names[s.task.project_id],
+                status=TaskStatus(s.status),
+                due_date=s.due_date,
+            )
+            for s in dated[:UPCOMING_LIMIT]
+        ],
+    }
+
+
+def _workload(
+    teams: list[Team], open_tasks: list[Task], open_subtasks: list[Subtask], today: date
+) -> list[Workload]:
+    """Open and overdue task counts, and open subtask counts, for every member of
+    the visible teams.
 
     People with nothing assigned are included (with zeros) on purpose: on a
     workload chart, the person with no work is as important as the busiest.
@@ -179,6 +215,7 @@ def _workload(teams: list[Team], open_tasks: list[Task], today: date) -> list[Wo
                 user=to_user_out(user),
                 open=len(theirs),
                 overdue=sum(1 for t in theirs if _is_overdue(t, today)),
+                open_subtasks=sum(1 for s in open_subtasks if s.assignee_id == user_id),
             )
         )
     rows.sort(key=lambda row: (-row.open, row.user.name.lower(), row.user.id))

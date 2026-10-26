@@ -155,6 +155,9 @@ class TaskOut(BaseModel):
     subtasks_done: int
     subtasks_total: int
     depends_on: list[int]
+    #: Who holds this task's subtasks (no repeats, lowest id first), so a list of
+    #: tasks can show someone the work assigned to them inside other people's tasks.
+    subtask_assignee_ids: list[int]
 
 
 class TaskDetail(TaskOut):
@@ -192,6 +195,7 @@ def _task_fields(task: "Task") -> dict:
         "subtasks_done": sum(1 for s in task.subtasks if s.status == TaskStatus.DONE),
         "subtasks_total": len(task.subtasks),
         "depends_on": [other.id for other in task.depends_on],
+        "subtask_assignee_ids": sorted({s.assignee_id for s in task.subtasks if s.assignee_id}),
     }
 
 
