@@ -424,3 +424,39 @@ def test_an_unreachable_profile_check_still_opens_the_app(qtbot, monkeypatch, tm
 
     assert window._app_shell is not None
     assert identity_vm.load_cached_identity(server.id) is not None
+
+
+def test_a_sign_in_that_expires_while_the_app_is_open_asks_again(
+    qtbot, monkeypatch, tmp_path
+) -> None:
+    """Found in use: every page showed "401" instead of asking to sign in again."""
+    monkeypatch.setattr(ApiClient, "health", lambda self: {"status": "ok"})
+    monkeypatch.setattr(
+        ApiClient, "get_server_info", lambda self: {"display_name": "Kairos Server"}
+    )
+    monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
+    monkeypatch.setattr(ApiClient, "get_my_profile", lambda self: {"role": "member"})
+    logged_out = []
+    monkeypatch.setattr(ApiClient, "logout", lambda self: logged_out.append(True))
+
+    vm = _isolated_viewmodel(tmp_path)
+    server = vm.add_server(host="192.168.1.10", port=8000)
+    identity_vm = _isolated_identity_viewmodel(tmp_path)
+    identity_vm.set_identity(server.id, 7, "Bob", "tok-bob")
+    window = _make_window(tmp_path, server_list_vm=vm, identity_vm=identity_vm)
+    qtbot.addWidget(window)
+    asked = []
+    monkeypatch.setattr(window, "_on_sign_in_clicked", lambda: asked.append(True))
+    qtbot.mouseClick(window._saved_tiles_layout.itemAt(0).widget(), Qt.MouseButton.LeftButton)
+    shell = window._app_shell
+    assert shell is not None
+
+    shell._handle_session_expired()  # what a 401 on any page leads to
+
+    assert window._app_shell is None
+    assert not shell.isVisible()
+    assert asked == [True]
+    assert logged_out == []  # the token is already dead: no logout request
+    assert "sign-in has expired" in window.status_label.text()
+    assert identity_vm.load_cached_identity(server.id) is None
+    assert window.api_client.token is None

@@ -351,6 +351,7 @@ class ConnectWindow(QMainWindow):
             is_admin=is_admin,
             theme_manager=self.theme_manager,
             role=role,
+            on_session_expired=self._on_session_expired,
         )
         self._app_shell.show()
         self.hide()
@@ -368,6 +369,23 @@ class ConnectWindow(QMainWindow):
             self.identity_vm.clear(self._current_server.id)
         self.identity_label.setText("Not signed in")
         self.show()
+
+    def _on_session_expired(self) -> None:
+        """The server stopped accepting this sign-in while the app was open:
+        close the app window, forget the saved sign-in (no logout call - the
+        token is already dead) and ask for the password again."""
+        if self._app_shell is not None:
+            self._app_shell.close()
+            self._app_shell = None
+        if self.api_client is not None:
+            self.api_client.token = None
+            self.api_client.user_id = None
+        if self._current_server is not None:
+            self.identity_vm.clear(self._current_server.id)
+        self.identity_label.setText("Not signed in")
+        self.status_label.setText("Your sign-in has expired - please sign in again.")
+        self.show()
+        self._on_sign_in_clicked()
 
     def closeEvent(self, event) -> None:
         self.discovery_listener.stop()

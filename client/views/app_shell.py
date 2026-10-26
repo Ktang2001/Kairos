@@ -1,4 +1,4 @@
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -28,6 +28,15 @@ from shared.roles import ROLE_ADMIN, ROLE_MEMBER
 
 NAV_WIDTH = 140
 
+
+class _SessionExpiry(QObject):
+    """Carries "the server refused our token" from a request's background thread
+    to the main thread: a signal emitted on another thread to a main-thread
+    object's slot is queued, so the slot runs on the main thread."""
+
+    expired = Signal()
+
+
 #: How often the Dashboard, Teams, Projects or Users page, while showing,
 #: reloads by itself so other people's changes appear without clicking.
 AUTO_REFRESH_MS = 30_000
@@ -54,10 +63,19 @@ class AppShell(QMainWindow):
         theme_manager: ThemeManager | None = None,
         parent: QWidget | None = None,
         role: str | None = None,
+        on_session_expired=None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Kairos")
         self.api_client = api_client
+
+        # A sign-in that stops being accepted while the app is open (found in
+        # use: every page showed "401" instead of asking to sign in again).
+        self._on_session_expired = on_session_expired
+        self._session_expiry_handled = False
+        self._session_expiry = _SessionExpiry(self)
+        self._session_expiry.expired.connect(self._handle_session_expired)
+        api_client.on_session_expired = self._report_session_expired
         self.theme_manager = theme_manager or ThemeManager()
 
         nav_items = ["Dashboard", "Chat", "Teams", "Projects"]
@@ -138,6 +156,30 @@ class AppShell(QMainWindow):
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
+
+    def _report_session_expired(self) -> None:
+        """Called on a request's thread; hands over to the main thread."""
+        try:
+            self._session_expiry.expired.emit()
+        except RuntimeError:  # this window is already gone
+            pass
+
+    @Slot()
+    def _handle_session_expired(self) -> None:
+        """Main thread: stop refreshing and let the caller ask for a sign-in, once
+        (several pages' requests can fail with 401 at the same moment)."""
+        if self._session_expiry_handled or self._on_session_expired is None:
+            return
+        self._session_expiry_handled = True
+        self.refresh_timer.stop()
+        self._on_session_expired()
+
+    def closeEvent(self, event) -> None:
+        """Stop reporting 401s to this window once it's closed."""
+        if self.api_client.on_session_expired == self._report_session_expired:
+            self.api_client.on_session_expired = None
+        self.refresh_timer.stop()
+        super().closeEvent(event)
 
     def _on_nav_changed(self, index: int) -> None:
         """Show the chosen page; Dashboard, Teams, Projects and Users reload each time they are

@@ -17,6 +17,7 @@ pinned connection.
 
 import mimetypes
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -111,7 +112,26 @@ class ApiClient:
         # to call) is what lets every request share one verified TLS connection pool.
         self.cert_pem = cert_pem
         verify = build_pinned_ssl_context(cert_pem) if cert_pem else True
-        self._http = httpx.Client(verify=verify, timeout=5)
+        #: Called (on whatever thread made the request) the first time a signed-in
+        #: request is refused with 401: the server no longer accepts the token
+        #: (signed out elsewhere, expired, or every session ended by an update).
+        #: The app window sets this to send the user back to sign in.
+        self.on_session_expired: Callable[[], None] | None = None
+        self._http = httpx.Client(
+            verify=verify, timeout=5, event_hooks={"response": [self._watch_for_expiry]}
+        )
+
+    def _watch_for_expiry(self, response: httpx.Response) -> None:
+        """Report a 401 on a signed-in request (not sign-in itself, whose 401
+        just means a wrong password) to ``on_session_expired``."""
+        callback = self.on_session_expired
+        if (
+            response.status_code == 401
+            and callback is not None
+            and self.token is not None
+            and not response.request.url.path.startswith("/auth/")
+        ):
+            callback()
 
     def _auth_headers(self) -> dict[str, str]:
         """`token` (from signup/login - see client/views/auth_dialog.py) must be set
