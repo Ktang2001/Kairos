@@ -388,5 +388,14 @@ class ConnectWindow(QMainWindow):
         self._on_sign_in_clicked()
 
     def closeEvent(self, event) -> None:
+        """Stop listening for servers, and close the app window this opened.
+
+        Found while investigating slow test runs: an app window left open after
+        its connect window closed kept auto-refreshing (every 30 s), sending
+        requests long after anyone was using it.
+        """
         self.discovery_listener.stop()
+        if self._app_shell is not None:
+            self._app_shell.close()
+            self._app_shell = None
         super().closeEvent(event)

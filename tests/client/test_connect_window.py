@@ -460,3 +460,33 @@ def test_a_sign_in_that_expires_while_the_app_is_open_asks_again(
     assert "sign-in has expired" in window.status_label.text()
     assert identity_vm.load_cached_identity(server.id) is None
     assert window.api_client.token is None
+
+
+def test_closing_the_connect_window_closes_the_app_window_it_opened(
+    qtbot, monkeypatch, tmp_path
+) -> None:
+    """Found while investigating slow test runs: the app window outlived its
+    connect window and kept auto-refreshing every 30 s."""
+    monkeypatch.setattr(ApiClient, "health", lambda self: {"status": "ok"})
+    monkeypatch.setattr(
+        ApiClient, "get_server_info", lambda self: {"display_name": "Kairos Server"}
+    )
+    monkeypatch.setattr(ApiClient, "list_conversations", lambda self: [])
+    monkeypatch.setattr(ApiClient, "get_my_profile", lambda self: {"role": "member"})
+
+    vm = _isolated_viewmodel(tmp_path)
+    server = vm.add_server(host="192.168.1.10", port=8000)
+    identity_vm = _isolated_identity_viewmodel(tmp_path)
+    identity_vm.set_identity(server.id, 7, "Bob", "tok-bob")
+    window = _make_window(tmp_path, server_list_vm=vm, identity_vm=identity_vm)
+    qtbot.addWidget(window)
+    qtbot.mouseClick(window._saved_tiles_layout.itemAt(0).widget(), Qt.MouseButton.LeftButton)
+    shell = window._app_shell
+    assert shell is not None and shell.refresh_timer.isActive()
+
+    window.close()
+
+    assert window._app_shell is None
+    assert not shell.isVisible()
+    assert not shell.refresh_timer.isActive()
+    assert window.api_client.on_session_expired is None
