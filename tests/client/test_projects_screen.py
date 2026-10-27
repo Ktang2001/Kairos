@@ -744,3 +744,30 @@ def test_ticking_an_in_progress_subtask_marks_it_done(qtbot: QtBot, crew: Crew) 
     view.subtasks_list.item(0).setCheckState(Qt.CheckState.Checked)
     _settle(qtbot, view)
     assert crew.lead.client.get_task(task_id)["subtasks"][0]["status"] == "done"
+
+
+# ------------------------------------ completed projects are read-only (6)
+
+
+def test_a_completed_project_is_read_only_in_the_app(qtbot: QtBot, crew: Crew) -> None:
+    project = _project_with_tasks(crew, {"title": "Done already"})
+    crew.lead.client.update_project(project["id"], status="completed")
+
+    member_view = _open(qtbot, crew.member)
+    assert not member_view.read_only_label.isHidden()
+    assert "Ask the team lead to reopen it" in member_view.read_only_label.text()
+    assert not member_view.editor_box.isEnabled()
+    assert not member_view.new_task_button.isEnabled()
+    # Still viewable: the task is listed and opens in the (greyed-out) editor.
+    member_view.tasks_table.selectRow(0)
+    _settle(qtbot, member_view)
+    assert member_view.title_input.text() == "Done already"
+    assert not member_view.new_task_button.isEnabled()  # still off after the reload
+
+    lead_view = _open(qtbot, crew.lead)
+    assert "Reopen it on the left" in lead_view.read_only_label.text()
+    lead_view.complete_project_button.click()  # "Reopen project"
+    _settle(qtbot, lead_view)
+    assert lead_view.read_only_label.isHidden()
+    assert lead_view.editor_box.isEnabled()
+    assert lead_view.new_task_button.isEnabled()

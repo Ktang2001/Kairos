@@ -65,6 +65,10 @@ ERRORS: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_409_CONFLICT,
         "That would make the tasks wait on each other in a loop",
     ),
+    task_service.ProjectCompleted: (
+        status.HTTP_409_CONFLICT,
+        "This project is completed - reopen it to make changes",
+    ),
     task_service.DependencyNotFound: (
         status.HTTP_404_NOT_FOUND,
         "This task does not depend on that task",

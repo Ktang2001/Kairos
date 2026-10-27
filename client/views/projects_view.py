@@ -210,6 +210,10 @@ class ProjectsView(QWidget):
         self.project_title = ElidedLabel()
         self.project_title.setStyleSheet("font-size: 16px; font-weight: 600;")
         self.project_summary = QLabel()
+        #: Shown for a completed project, whose work is read-only.
+        self.read_only_label = QLabel()
+        self.read_only_label.setWordWrap(True)
+        self.read_only_label.setStyleSheet("font-weight: 600;")
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_tasks_tab(), "Tasks")
@@ -220,6 +224,7 @@ class ProjectsView(QWidget):
         project_layout.setContentsMargins(0, 0, 0, 0)
         project_layout.addWidget(self.project_title)
         project_layout.addWidget(self.project_summary)
+        project_layout.addWidget(self.read_only_label)
         project_layout.addWidget(self.tabs, stretch=1)
 
         right_panel = QWidget()
@@ -749,6 +754,7 @@ class ProjectsView(QWidget):
 
     def _apply_permissions(self) -> None:
         """Show only the actions your role allows."""
+        self._apply_read_only()
         vm = self.viewmodel
         team = vm.team
         manages = team is not None and permissions.can_manage_projects(vm.me, team)
@@ -769,6 +775,33 @@ class ProjectsView(QWidget):
         """Disable the controls while a request is in flight."""
         for widget in [*self._buttons, self.team_combo, self.projects_list, self.tasks_table]:
             widget.setEnabled(not busy)
+        self._apply_read_only()
+
+    @property
+    def read_only(self) -> bool:
+        """True when the chosen project is completed, so its work can't be changed."""
+        project = self.viewmodel.project
+        return project is not None and project["status"] == "completed"
+
+    def _apply_read_only(self) -> None:
+        """Grey out every way of changing a completed project's work (the server
+        refuses those changes anyway), and say why. Tasks stay viewable."""
+        read_only = self.read_only
+        self.editor_box.setEnabled(not read_only)
+        self.new_task_button.setEnabled(not read_only and not self.viewmodel.busy)
+        vm = self.viewmodel
+        manages = vm.team is not None and permissions.can_manage_projects(vm.me, vm.team)
+        self.read_only_label.setText(
+            "This project is completed, so its tasks can't be changed. "
+            + (
+                "Reopen it on the left to make changes."
+                if manages
+                else "Ask the team lead to reopen it."
+            )
+            if read_only
+            else ""
+        )
+        self.read_only_label.setVisible(read_only)
 
     def _mark_subtask_dirty(self, *_args) -> None:
         """The user changed the subtask editor (ignored while the screen refills it)."""

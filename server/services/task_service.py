@@ -15,6 +15,11 @@ their tasks there are unassigned (``team_service.remove_member``).
 Dependencies ("B cannot start until A is done") link two tasks in the same
 project and may never form a loop: a loop has no valid order, so a Gantt
 chart could not draw it.
+
+A completed project is read-only: its tasks, subtasks and dependencies can be
+viewed but not created, changed or deleted (``ProjectCompleted``) until the
+team's lead or an admin reopens it. Decided 2026-10-26; before, finished
+projects quietly kept accepting new work.
 """
 
 from collections import deque
@@ -26,12 +31,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import selectinload
 
+from server.models.project import Project
 from server.models.subtask import Subtask
 from server.models.task import Task
 from server.models.team import Team
 from server.models.user import User
 from server.services import project_service, team_service
-from shared.statuses import TaskStatus
+from shared.statuses import ProjectStatus, TaskStatus
 
 
 def utcnow() -> datetime:
@@ -65,6 +71,16 @@ class DependencyCycle(Exception):
 
 class DependencyNotFound(Exception):
     """The task does not depend on that other task."""
+
+
+class ProjectCompleted(Exception):
+    """The project is completed, so its work can't be changed until it is reopened."""
+
+
+def _require_open(project: Project) -> None:
+    """Refuse changes to the work in a completed project."""
+    if project.status == ProjectStatus.COMPLETED:
+        raise ProjectCompleted(project.id)
 
 
 def _task_query():
@@ -160,6 +176,7 @@ def create_task(
 ) -> Task:
     """Create a task in a project the actor can see. The assignee must be on the team."""
     project, team = project_service.get_visible_project(db, project_id, actor)
+    _require_open(project)
     _check_assignee(team, assignee_id)
 
     task = Task(
@@ -202,6 +219,7 @@ def list_tasks(
 def update_task(db: OrmSession, task_id: int, actor: User, changes: dict[str, Any]) -> Task:
     """Apply ``changes`` (only the fields the client sent) to the task."""
     task, team = get_visible_task(db, task_id, actor)
+    _require_open(task.project)
 
     if "assignee_id" in changes:
         _check_assignee(team, changes["assignee_id"])
@@ -221,6 +239,7 @@ def delete_task(db: OrmSession, task_id: int, actor: User) -> None:
     task, team = get_visible_task(db, task_id, actor)
     if not team_service.can_manage(team, actor):
         raise team_service.NotTeamManager(team.id)
+    _require_open(task.project)
     db.delete(task)
     db.commit()
 
@@ -250,6 +269,7 @@ def add_dependency(db: OrmSession, task_id: int, actor: User, *, depends_on_id: 
     close a loop (including a task waiting on itself).
     """
     task, _ = get_visible_task(db, task_id, actor)
+    _require_open(task.project)
 
     other = db.get(Task, depends_on_id)
     if other is None or other.project_id != task.project_id:
@@ -272,6 +292,7 @@ def add_dependency(db: OrmSession, task_id: int, actor: User, *, depends_on_id: 
 def remove_dependency(db: OrmSession, task_id: int, actor: User, *, depends_on_id: int) -> Task:
     """Remove the link "``task_id`` waits on ``depends_on_id``"."""
     task, _ = get_visible_task(db, task_id, actor)
+    _require_open(task.project)
     link = next((other for other in task.depends_on if other.id == depends_on_id), None)
     if link is None:
         raise DependencyNotFound(depends_on_id)
@@ -308,6 +329,7 @@ def create_subtask(
 ) -> Task:
     """Add a subtask. Returns the parent task, so the client sees the new progress."""
     task, team = get_visible_task(db, task_id, actor)
+    _require_open(task.project)
     _check_assignee(team, assignee_id)
 
     db.add(
@@ -327,6 +349,7 @@ def create_subtask(
 def update_subtask(db: OrmSession, subtask_id: int, actor: User, changes: dict[str, Any]) -> Task:
     """Apply ``changes`` to the subtask. Returns the parent task."""
     subtask, team = _get_visible_subtask(db, subtask_id, actor)
+    _require_open(subtask.task.project)
 
     if "assignee_id" in changes:
         _check_assignee(team, changes["assignee_id"])
@@ -343,5 +366,6 @@ def delete_subtask(db: OrmSession, subtask_id: int, actor: User) -> None:
     subtask, team = _get_visible_subtask(db, subtask_id, actor)
     if not team_service.can_manage(team, actor):
         raise team_service.NotTeamManager(team.id)
+    _require_open(subtask.task.project)
     db.delete(subtask)
     db.commit()

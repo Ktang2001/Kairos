@@ -286,3 +286,82 @@ def test_after_its_last_project_is_deleted_the_team_can_be(
 )
 def test_every_project_route_requires_login(client: TestClient, method: str, url: str) -> None:
     assert client.request(method.upper(), url, json={"name": "x"}).status_code == 401
+
+
+# ---------------------------------------- completed projects are read-only
+
+
+def _complete(client: TestClient, lead: Account, project: dict) -> None:
+    response = client.patch(
+        f"/projects/{project['id']}", json={"status": "completed"}, headers=lead.headers
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_a_completed_projects_work_cannot_be_changed(
+    client: TestClient, lead: Account, member: Account, project: dict
+) -> None:
+    """Decided 2026-10-26: before, finished projects quietly kept accepting work."""
+    task = _add_task(client, member.headers, project["id"], title="Done already")
+    other = _add_task(client, member.headers, project["id"], title="Other")
+    sub = client.post(
+        f"/tasks/{task['id']}/subtasks", json={"title": "Step"}, headers=member.headers
+    ).json()["subtasks"][0]
+    client.post(
+        f"/tasks/{other['id']}/dependencies",
+        json={"depends_on_id": task["id"]},
+        headers=member.headers,
+    )
+    _complete(client, lead, project)
+
+    attempts = [
+        ("post", f"/projects/{project['id']}/tasks", {"title": "Late addition"}, member),
+        ("patch", f"/tasks/{task['id']}", {"title": "Edited"}, member),
+        ("delete", f"/tasks/{task['id']}", None, lead),
+        ("post", f"/tasks/{task['id']}/subtasks", {"title": "More"}, member),
+        ("patch", f"/subtasks/{sub['id']}", {"status": "done"}, member),
+        ("delete", f"/subtasks/{sub['id']}", None, lead),
+        ("post", f"/tasks/{task['id']}/dependencies", {"depends_on_id": other["id"]}, member),
+        ("delete", f"/tasks/{other['id']}/dependencies/{task['id']}", None, member),
+    ]
+    for method, url, body, who in attempts:
+        response = client.request(method, url, json=body, headers=who.headers)
+        assert response.status_code == 409, (method, url, response.text)
+        assert response.json()["detail"] == "This project is completed - reopen it to make changes"
+
+    # Nothing changed, and the work can still be read.
+    listed = client.get(f"/projects/{project['id']}/tasks", headers=member.headers).json()
+    assert sorted(t["title"] for t in listed) == ["Done already", "Other"]
+    assert client.get(f"/projects/{project['id']}/gantt", headers=member.headers).status_code == 200
+
+
+def test_reopening_a_project_allows_changes_again(
+    client: TestClient, lead: Account, member: Account, project: dict
+) -> None:
+    _complete(client, lead, project)
+    assert (
+        client.patch(
+            f"/projects/{project['id']}", json={"name": "Renamed while done"}, headers=lead.headers
+        ).status_code
+        == 200
+    )
+    reopen = client.patch(
+        f"/projects/{project['id']}", json={"status": "active"}, headers=lead.headers
+    )
+    assert reopen.status_code == 200
+    _add_task(client, member.headers, project["id"], title="Back to work")
+
+
+def test_refusals_still_come_in_the_usual_order_on_a_completed_project(
+    client: TestClient, lead: Account, member: Account, outsider: Account, project: dict
+) -> None:
+    """An outsider still learns nothing (404), and a member still can't delete (403)."""
+    task = _add_task(client, member.headers, project["id"])
+    _complete(client, lead, project)
+    assert (
+        client.patch(
+            f"/tasks/{task['id']}", json={"title": "x"}, headers=outsider.headers
+        ).status_code
+        == 404
+    )
+    assert client.delete(f"/tasks/{task['id']}", headers=member.headers).status_code == 403
