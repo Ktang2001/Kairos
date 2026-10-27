@@ -312,6 +312,7 @@ class ProjectsView(QWidget):
         self.zoom_out_button.clicked.connect(lambda: self.gantt_chart.zoom(-1))
         self.gantt_chart.task_clicked.connect(self._open_task_from_chart)
 
+        viewmodel.save_conflicted.connect(self._keep_unsaved_edits)
         viewmodel.changed.connect(self._render)
         viewmodel.me_changed.connect(lambda _me: self._apply_permissions())
         viewmodel.busy_changed.connect(self._set_busy)
@@ -802,6 +803,15 @@ class ProjectsView(QWidget):
             else ""
         )
         self.read_only_label.setVisible(read_only)
+
+    def _keep_unsaved_edits(self, _message: str) -> None:
+        """A save was refused because someone else saved first: keep what the
+        user typed in the editors (the reload that follows would otherwise
+        replace it with the other person's version)."""
+        if self._form_task is not None:
+            self._form_dirty = True
+        if self._subtask_form_id is not None:
+            self._subtask_dirty = True
 
     def _mark_subtask_dirty(self, *_args) -> None:
         """The user changed the subtask editor (ignored while the screen refills it)."""

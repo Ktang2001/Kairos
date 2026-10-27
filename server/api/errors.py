@@ -65,6 +65,14 @@ ERRORS: dict[type[Exception], tuple[int, str]] = {
         status.HTTP_409_CONFLICT,
         "That would make the tasks wait on each other in a loop",
     ),
+    task_service.TaskChanged: (
+        status.HTTP_409_CONFLICT,
+        "Someone else changed this task while you were editing it - your changes weren't saved",
+    ),
+    task_service.SubtaskChanged: (
+        status.HTTP_409_CONFLICT,
+        "Someone else changed this subtask while you were editing it - your changes weren't saved",
+    ),
     task_service.ProjectCompleted: (
         status.HTTP_409_CONFLICT,
         "This project is completed - reopen it to make changes",

@@ -44,6 +44,10 @@ class Task(Base):
     status: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
+    #: Goes up by one with every saved change. An edit sends the version it
+    #: started from, and is refused if someone else saved in between, instead
+    #: of silently overwriting them (``task_service.update_task``).
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
     #: Naive UTC, set when the status becomes "done" and cleared if the task
     #: is reopened.
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)

@@ -613,3 +613,79 @@ def test_task_listings_say_who_holds_the_subtasks(
     assert listed[0]["subtask_assignee_ids"] == sorted({member.id, lead.id})
     detail = client.get(f"/tasks/{task['id']}", headers=member.headers).json()
     assert detail["subtask_assignee_ids"] == sorted({member.id, lead.id})
+
+
+# ------------------------------------- no silent overwrites (decided 2026-10-26)
+
+
+def test_each_save_moves_the_version_on(client: TestClient, member: Account, task: dict) -> None:
+    assert task["version"] == 1
+    saved = client.patch(
+        f"/tasks/{task['id']}", json={"title": "Renamed", "version": 1}, headers=member.headers
+    )
+    assert saved.status_code == 200
+    assert saved.json()["version"] == 2
+
+
+def test_a_save_from_an_old_version_is_refused_and_changes_nothing(
+    client: TestClient, lead: Account, member: Account, task: dict
+) -> None:
+    """Two people open the same task; the second to save must not silently
+    overwrite the first."""
+    first = client.patch(
+        f"/tasks/{task['id']}", json={"title": "Lena's title", "version": 1}, headers=lead.headers
+    )
+    assert first.status_code == 200
+    second = client.patch(
+        f"/tasks/{task['id']}", json={"title": "Max's title", "version": 1}, headers=member.headers
+    )
+    assert second.status_code == 409
+    assert "Someone else changed this task" in second.json()["detail"]
+    current = client.get(f"/tasks/{task['id']}", headers=member.headers).json()
+    assert (current["title"], current["version"]) == ("Lena's title", 2)
+    # Saving again from the version they now see goes through.
+    retry = client.patch(
+        f"/tasks/{task['id']}", json={"title": "Max's title", "version": 2}, headers=member.headers
+    )
+    assert retry.status_code == 200
+
+
+def test_a_save_without_a_version_still_works(
+    client: TestClient, member: Account, task: dict
+) -> None:
+    """Quick status changes and older clients don't send a version."""
+    client.patch(f"/tasks/{task['id']}", json={"title": "A"}, headers=member.headers)
+    response = client.patch(f"/tasks/{task['id']}", json={"status": "done"}, headers=member.headers)
+    assert response.status_code == 200
+    assert response.json()["version"] == 3
+
+
+@pytest.mark.parametrize("version", [0, -1, "two"])
+def test_a_nonsense_version_is_rejected(
+    client: TestClient, member: Account, task: dict, version: object
+) -> None:
+    response = client.patch(
+        f"/tasks/{task['id']}", json={"title": "x", "version": version}, headers=member.headers
+    )
+    assert response.status_code == 422
+
+
+def test_subtasks_have_versions_too(
+    client: TestClient, lead: Account, member: Account, task: dict
+) -> None:
+    sub = client.post(
+        f"/tasks/{task['id']}/subtasks", json={"title": "Step"}, headers=member.headers
+    ).json()["subtasks"][0]
+    assert sub["version"] == 1
+    url = f"/subtasks/{sub['id']}"
+    assert (
+        client.patch(url, json={"title": "Lena", "version": 1}, headers=lead.headers).status_code
+        == 200
+    )
+    stale = client.patch(url, json={"title": "Max", "version": 1}, headers=member.headers)
+    assert stale.status_code == 409
+    assert "Someone else changed this subtask" in stale.json()["detail"]
+    # A quick tick (no version) still goes through.
+    assert client.patch(url, json={"status": "done"}, headers=member.headers).status_code == 200
+    [current] = client.get(f"/tasks/{task['id']}", headers=member.headers).json()["subtasks"]
+    assert (current["title"], current["status"], current["version"]) == ("Lena", "done", 3)

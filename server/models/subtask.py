@@ -25,6 +25,8 @@ class Subtask(Base):
     due_date: Mapped[date | None]
     #: A ``shared.statuses.TaskStatus`` value.
     status: Mapped[str]
+    #: Goes up by one with every saved change; see ``Task.version``.
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
 
     task: Mapped["Task"] = relationship(back_populates="subtasks")  # noqa: F821
     assignee: Mapped["User | None"] = relationship()  # noqa: F821

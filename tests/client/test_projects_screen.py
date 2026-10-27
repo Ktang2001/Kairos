@@ -771,3 +771,64 @@ def test_a_completed_project_is_read_only_in_the_app(qtbot: QtBot, crew: Crew) -
     assert lead_view.read_only_label.isHidden()
     assert lead_view.editor_box.isEnabled()
     assert lead_view.new_task_button.isEnabled()
+
+
+# ------------------------------------------ no silent overwrites (item 7)
+
+
+def test_someone_elses_save_is_not_overwritten_and_my_edits_survive(
+    qtbot: QtBot, crew: Crew
+) -> None:
+    project = _project_with_tasks(crew, {"title": "Draft"})
+    task_id = crew.lead.client.list_tasks(project["id"])[0]["id"]
+    view = _open(qtbot, crew.member)
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+
+    # Lena saves first, while Max is still typing.
+    crew.lead.client.update_task(task_id, title="Lena's title")
+    _fill_task(view, "Max's title")
+    view.save_task_button.click()
+    _settle(qtbot, view)
+
+    assert crew.lead.client.get_task(task_id)["title"] == "Lena's title"
+    assert "Someone else changed this task" in view.error_label.text()
+    assert "save again to replace their version" in view.error_label.text()
+    assert view.title_input.text() == "Max's title"  # his typing is kept
+    assert _table_titles(view) == ["Lena's title"]  # the list shows hers
+
+    # Saving again, knowingly, replaces her version.
+    view.save_task_button.click()
+    _settle(qtbot, view)
+    assert crew.lead.client.get_task(task_id)["title"] == "Max's title"
+    assert view.error_label.text() == ""
+
+
+def test_the_same_holds_for_subtasks(qtbot: QtBot, crew: Crew) -> None:
+    view, _project, task_id = _open_task_with_subtask(qtbot, crew, crew.member)
+    sub_id = crew.lead.client.get_task(task_id)["subtasks"][0]["id"]
+    crew.lead.client.update_subtask(sub_id, title="Lena's step")
+
+    view.subtask_title_input.setText("Max's step")
+    view.subtask_title_input.textEdited.emit("Max's step")
+    view.save_subtask_button.click()
+    _settle(qtbot, view)
+    assert crew.lead.client.get_task(task_id)["subtasks"][0]["title"] == "Lena's step"
+    assert "Someone else changed this subtask" in view.error_label.text()
+    assert view.subtask_title_input.text() == "Max's step"
+
+
+def test_a_project_completed_mid_edit_refuses_the_save_and_turns_read_only(
+    qtbot: QtBot, crew: Crew
+) -> None:
+    project = _project_with_tasks(crew, {"title": "Draft"})
+    view = _open(qtbot, crew.member)
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+    crew.lead.client.update_project(project["id"], status="completed")
+    _fill_task(view, "Too late")
+    view.save_task_button.click()
+    _settle(qtbot, view)
+    assert "This project is completed" in view.error_label.text()
+    assert not view.editor_box.isEnabled()
+    assert crew.lead.client.list_tasks(project["id"])[0]["title"] == "Draft"

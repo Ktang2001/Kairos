@@ -89,9 +89,16 @@ class TaskCreate(_DatesInOrder):
 
 
 class TaskUpdate(_NoNullRequiredFields, _DatesInOrder):
-    """Body of PATCH /tasks/{id}. Only the fields sent are changed."""
+    """Body of PATCH /tasks/{id}. Only the fields sent are changed.
+
+    ``version`` is the task's version the edit started from; if sent and the
+    task has been saved since, the edit is refused (409) rather than silently
+    overwriting someone else's change.
+    """
 
     model_config = ConfigDict(str_strip_whitespace=True)
+
+    version: int | None = Field(default=None, ge=1)
 
     title: Title | None = Field(default=None, min_length=1, max_length=MAX_TITLE_LENGTH)
     description: Description = None
@@ -110,9 +117,12 @@ class SubtaskCreate(_DatesInOrder):
 
 
 class SubtaskUpdate(_NoNullRequiredFields, _DatesInOrder):
-    """Body of PATCH /subtasks/{id}. Only the fields sent are changed."""
+    """Body of PATCH /subtasks/{id}. Only the fields sent are changed;
+    ``version`` works as in ``TaskUpdate``."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
+
+    version: int | None = Field(default=None, ge=1)
 
     title: Title | None = Field(default=None, min_length=1, max_length=MAX_TITLE_LENGTH)
     assignee_id: int | None = None
@@ -135,6 +145,7 @@ class SubtaskOut(BaseModel):
     assignee: UserOut | None
     start_date: date | None
     due_date: date | None
+    version: int
 
 
 class TaskOut(BaseModel):
@@ -155,6 +166,7 @@ class TaskOut(BaseModel):
     subtasks_done: int
     subtasks_total: int
     depends_on: list[int]
+    version: int
     #: Who holds this task's subtasks (no repeats, lowest id first), so a list of
     #: tasks can show someone the work assigned to them inside other people's tasks.
     subtask_assignee_ids: list[int]
@@ -176,6 +188,7 @@ def to_subtask_out(subtask: "Subtask") -> SubtaskOut:
         assignee=to_user_out(subtask.assignee) if subtask.assignee else None,
         start_date=subtask.start_date,
         due_date=subtask.due_date,
+        version=subtask.version,
     )
 
 
@@ -195,6 +208,7 @@ def _task_fields(task: "Task") -> dict:
         "subtasks_done": sum(1 for s in task.subtasks if s.status == TaskStatus.DONE),
         "subtasks_total": len(task.subtasks),
         "depends_on": [other.id for other in task.depends_on],
+        "version": task.version,
         "subtask_assignee_ids": sorted({s.assignee_id for s in task.subtasks if s.assignee_id}),
     }
 

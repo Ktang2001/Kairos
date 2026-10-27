@@ -17,7 +17,7 @@ from datetime import date
 
 from PySide6.QtCore import QObject, Signal
 
-from client.api_client import ApiClient
+from client.api_client import ApiClient, ApiError
 from client.viewmodels.background import BackgroundRunner
 from client.viewmodels.session import Session
 from shared.date_rules import DATE_RANGE_MESSAGE, date_in_range
@@ -89,6 +89,10 @@ class ProjectsViewModel(QObject):
     busy_changed = Signal(bool)
     #: The message to show, or "" to clear it.
     error_changed = Signal(str)
+    #: A save was refused because someone else saved first (the message says
+    #: so). Emitted just before ``changed``, so the view can keep the user's
+    #: unsaved edits instead of refilling the editor from the reloaded data.
+    save_conflicted = Signal(str)
 
     _KEEP = object()
 
@@ -225,7 +229,8 @@ class ProjectsViewModel(QObject):
             self.error_changed.emit(problem)
             return
         task_id, body = self.task["id"], to_request(fields)
-        self._run(lambda client: client.update_task(task_id, **body))
+        body["version"] = self.task.get("version")
+        self._run(lambda client: client.update_task(task_id, **body), reload_on_conflict=True)
 
     def set_task_status(self, task_id: int, status: str) -> None:
         """Change one task's status without opening it (e.g. from the task list)."""
@@ -279,7 +284,10 @@ class ProjectsViewModel(QObject):
             "start_date": _iso(start_date),
             "due_date": _iso(due_date),
         }
-        self._run(lambda client: client.update_subtask(subtask_id, **body))
+        subtasks = (self.task or {}).get("subtasks", [])
+        loaded = next((s for s in subtasks if s["id"] == subtask_id), {})
+        body["version"] = loaded.get("version")
+        self._run(lambda client: client.update_subtask(subtask_id, **body), reload_on_conflict=True)
 
     def delete_subtask(self, subtask_id: int) -> None:
         """Delete a subtask."""
@@ -310,8 +318,14 @@ class ProjectsViewModel(QObject):
         team: object = _KEEP,
         project: object = _KEEP,
         task: object = _KEEP,
+        reload_on_conflict: bool = False,
     ) -> None:
         """Do ``action`` (if any) then reload everything, on a background thread.
+
+        With ``reload_on_conflict``, a 409 from the action (someone else saved
+        first, or the project was completed meanwhile) still reloads everything,
+        so the screen shows what the server has now, and is then reported
+        through ``save_conflicted``.
 
         ``team``/``project``/``task`` choose what is selected afterwards; by
         default the current choice stays if it still exists. ``action`` may
@@ -331,8 +345,14 @@ class ProjectsViewModel(QObject):
         def job() -> dict:
             """Runs on the background thread: the action (if any), then the fresh data."""
             chosen = dict(wanted)
+            conflict = None
             if action is not None:
-                result = action(client)
+                try:
+                    result = action(client)
+                except ApiError as exc:
+                    if not (reload_on_conflict and exc.status_code == 409):
+                        raise
+                    result, conflict = None, exc.message
                 if isinstance(result, dict):
                     chosen.update(result)
             me = client.me()
@@ -346,6 +366,7 @@ class ProjectsViewModel(QObject):
                 "tasks": [],
                 "gantt": None,
                 "task": None,
+                "conflict": conflict,
             }
             team_ids = [t["id"] for t in teams]
             team_id = chosen["team"] if chosen["team"] in team_ids else None
@@ -385,7 +406,14 @@ class ProjectsViewModel(QObject):
         self.tasks = data["tasks"]
         self.gantt = data["gantt"]
         self.task = data["task"]
+        if data.get("conflict"):
+            self.save_conflicted.emit(data["conflict"])
         self.changed.emit()
+        if data.get("conflict"):
+            self.error_changed.emit(
+                f"{data['conflict']}. Your edits are still in the editor: save again to "
+                "replace their version, or pick the task again to discard yours."
+            )
         self._run_queued_refresh()
 
     def _failed(self, message: str) -> None:

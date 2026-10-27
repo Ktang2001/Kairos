@@ -16,6 +16,12 @@ Dependencies ("B cannot start until A is done") link two tasks in the same
 project and may never form a loop: a loop has no valid order, so a Gantt
 chart could not draw it.
 
+Two people editing the same task or subtask don't silently overwrite each
+other: each save may say which ``version`` it started from, and is refused
+(``TaskChanged``/``SubtaskChanged``) if someone else saved in between. Decided
+2026-10-26; before, the last save simply won. Saves that don't send a version
+(quick status ticks, older clients) are applied as before.
+
 A completed project is read-only: its tasks, subtasks and dependencies can be
 viewed but not created, changed or deleted (``ProjectCompleted``) until the
 team's lead or an admin reopens it. Decided 2026-10-26; before, finished
@@ -71,6 +77,22 @@ class DependencyCycle(Exception):
 
 class DependencyNotFound(Exception):
     """The task does not depend on that other task."""
+
+
+class TaskChanged(Exception):
+    """Someone else saved the task after the version this edit started from."""
+
+
+class SubtaskChanged(Exception):
+    """Someone else saved the subtask after the version this edit started from."""
+
+
+def _check_version(item: Task | Subtask, changes: dict[str, Any], error: type[Exception]) -> None:
+    """Take the version the edit started from out of ``changes`` (it isn't a
+    field to set) and refuse the edit if the item has been saved since."""
+    expected = changes.pop("version", None)
+    if expected is not None and expected != item.version:
+        raise error(item.id)
 
 
 class ProjectCompleted(Exception):
@@ -220,6 +242,7 @@ def update_task(db: OrmSession, task_id: int, actor: User, changes: dict[str, An
     """Apply ``changes`` (only the fields the client sent) to the task."""
     task, team = get_visible_task(db, task_id, actor)
     _require_open(task.project)
+    _check_version(task, changes, TaskChanged)
 
     if "assignee_id" in changes:
         _check_assignee(team, changes["assignee_id"])
@@ -230,6 +253,10 @@ def update_task(db: OrmSession, task_id: int, actor: User, changes: dict[str, An
             _apply_status(task, value)
         else:
             setattr(task, field, value)
+    # Every request that changes data holds the database's write lock from its
+    # first read (server/db/session.py), so the check above and this bump
+    # can't interleave with another save.
+    task.version += 1
     db.commit()
     return _reload_task(db, task.id)
 
@@ -350,6 +377,7 @@ def update_subtask(db: OrmSession, subtask_id: int, actor: User, changes: dict[s
     """Apply ``changes`` to the subtask. Returns the parent task."""
     subtask, team = _get_visible_subtask(db, subtask_id, actor)
     _require_open(subtask.task.project)
+    _check_version(subtask, changes, SubtaskChanged)
 
     if "assignee_id" in changes:
         _check_assignee(team, changes["assignee_id"])
@@ -357,6 +385,7 @@ def update_subtask(db: OrmSession, subtask_id: int, actor: User, changes: dict[s
 
     for field, value in changes.items():
         setattr(subtask, field, value)
+    subtask.version += 1
     db.commit()
     return _reload_task(db, subtask.task_id)
 
