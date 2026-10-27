@@ -702,3 +702,45 @@ def test_is_my_work_copes_with_an_older_server() -> None:
     assert not is_my_work(old_style, 7)
     assert is_my_work({"assignee": {"id": 7}}, 7)
     assert not is_my_work({"assignee": {"id": 7}}, None)
+
+
+# ---------------------------------- renaming subtasks and "in progress" (4, 5)
+
+
+def test_a_subtask_is_renamed_and_set_in_progress(qtbot: QtBot, crew: Crew) -> None:
+    view, _project, task_id = _open_task_with_subtask(qtbot, crew, crew.member)
+    assert view.subtask_title_input.text() == "Write announcement"
+    assert view.subtask_status_combo.currentData() == "todo"
+
+    view.subtask_title_input.setText("Write the launch post")
+    view.subtask_title_input.textEdited.emit("Write the launch post")
+    view.subtask_status_combo.setCurrentIndex(view.subtask_status_combo.findData("in_progress"))
+    view.save_subtask_button.click()
+    _settle(qtbot, view)
+
+    [subtask] = crew.lead.client.get_task(task_id)["subtasks"]
+    assert (subtask["title"], subtask["status"]) == ("Write the launch post", "in_progress")
+    assert view.subtasks_list.item(0).text() == "Write the launch post  (in progress)"
+    # Not ticked: in progress isn't done.
+    assert view.subtasks_list.item(0).checkState() == Qt.CheckState.Unchecked
+
+
+def test_a_blank_subtask_title_is_refused_before_sending(qtbot: QtBot, crew: Crew) -> None:
+    view, _project, task_id = _open_task_with_subtask(qtbot, crew, crew.member)
+    view.subtask_title_input.setText("  \u200b ")
+    view.save_subtask_button.click()
+    assert not view.viewmodel.busy
+    assert view.error_label.text() == "Enter a subtask title."
+    assert crew.lead.client.get_task(task_id)["subtasks"][0]["title"] == "Write announcement"
+
+
+def test_ticking_an_in_progress_subtask_marks_it_done(qtbot: QtBot, crew: Crew) -> None:
+    project = _project_with_tasks(crew, {"title": "Launch"})
+    task_id = crew.lead.client.list_tasks(project["id"])[0]["id"]
+    crew.lead.client.create_subtask(task_id, title="Step", status="in_progress")
+    view = _open(qtbot, crew.member)
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+    view.subtasks_list.item(0).setCheckState(Qt.CheckState.Checked)
+    _settle(qtbot, view)
+    assert crew.lead.client.get_task(task_id)["subtasks"][0]["status"] == "done"

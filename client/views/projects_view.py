@@ -88,6 +88,8 @@ def is_my_work(task: dict, my_id: int | None) -> bool:
 def subtask_label(subtask: dict) -> str:
     """A subtask's line in the list: its title, then who has it and when, if set."""
     details = []
+    if subtask["status"] == "in_progress":
+        details.append("in progress")
     if subtask["assignee"]:
         details.append(subtask["assignee"]["name"])
     start, due = parse_day(subtask["start_date"]), parse_day(subtask["due_date"])
@@ -280,6 +282,8 @@ class ProjectsView(QWidget):
         self.subtasks_list.currentItemChanged.connect(self._on_subtask_selected)
         self.save_subtask_button.clicked.connect(self._save_subtask)
         for signal in (
+            self.subtask_title_input.textEdited,
+            self.subtask_status_combo.currentIndexChanged,
             self.subtask_assignee_combo.currentIndexChanged,
             self.subtask_start_input.check.toggled,
             self.subtask_start_input.edit.dateChanged,
@@ -387,13 +391,20 @@ class ProjectsView(QWidget):
         subtask_row.addWidget(self.subtask_input, stretch=1)
         subtask_row.addWidget(self.add_subtask_button)
 
-        # The selected subtask's assignee and dates (goals 4 and 6).
+        # The selected subtask's title, status, assignee and dates (goals 4-6).
+        self.subtask_title_input = QLineEdit()
+        self.subtask_title_input.setMaxLength(MAX_TITLE_LENGTH)
+        self.subtask_status_combo = QComboBox()
+        for value, label in STATUS_LABELS.items():
+            self.subtask_status_combo.addItem(label, value)
         self.subtask_assignee_combo = QComboBox()
         self.subtask_start_input = OptionalDateEdit("Start")
         self.subtask_due_input = OptionalDateEdit("Due")
         self.save_subtask_button = QPushButton("Save subtask")
         self.subtask_editor = QGroupBox("Selected subtask")
         subtask_form = QFormLayout(self.subtask_editor)
+        subtask_form.addRow("Title", self.subtask_title_input)
+        subtask_form.addRow("Status", self.subtask_status_combo)
         subtask_form.addRow("Assigned to", self.subtask_assignee_combo)
         subtask_form.addRow("Dates", self.subtask_start_input)
         subtask_form.addRow("", self.subtask_due_input)
@@ -696,7 +707,7 @@ class ProjectsView(QWidget):
         return item.data(ID_ROLE) if item else None
 
     def _fill_subtask_editor(self) -> None:
-        """Show the selected subtask's assignee and dates, unless the user is
+        """Show the selected subtask's title, status, assignee and dates, unless the user is
         editing that same subtask (so an automatic refresh can't wipe it)."""
         subtask = self._selected_subtask()
         self.subtask_editor.setVisible(subtask is not None)
@@ -709,6 +720,9 @@ class ProjectsView(QWidget):
         was_filling, self._filling = self._filling, True
         try:
             self.subtask_editor.setTitle(f"Subtask: {subtask['title']}")
+            self.subtask_title_input.setText(subtask["title"])
+            status_index = self.subtask_status_combo.findData(subtask["status"])
+            self.subtask_status_combo.setCurrentIndex(max(0, status_index))
             self.subtask_assignee_combo.clear()
             self.subtask_assignee_combo.addItem("Unassigned", None)
             team = self.viewmodel.team
@@ -891,18 +905,20 @@ class ProjectsView(QWidget):
             self.viewmodel.set_subtask_done(item.data(ID_ROLE), done)
 
     def _on_subtask_selected(self, *_args) -> None:
-        """A different subtask was picked: show its assignee and dates."""
+        """A different subtask was picked: show it in the editor."""
         if not self._filling:
             self._subtask_dirty = False
             self._fill_subtask_editor()
 
     def _save_subtask(self) -> None:
-        """Save the editor's assignee and dates to the selected subtask."""
+        """Save the editor's title, status, assignee and dates to the selected subtask."""
         subtask_id = self._selected_subtask_id()
         if subtask_id is None:
             return
         self.viewmodel.save_subtask(
             subtask_id,
+            title=self.subtask_title_input.text(),
+            status=self.subtask_status_combo.currentData(),
             assignee_id=self.subtask_assignee_combo.currentData(),
             start_date=self.subtask_start_input.value(),
             due_date=self.subtask_due_input.value(),

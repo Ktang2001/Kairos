@@ -259,15 +259,22 @@ class ProjectsViewModel(QObject):
         self,
         subtask_id: int,
         *,
+        title: str,
+        status: str,
         assignee_id: int | None,
         start_date: date | None,
         due_date: date | None,
     ) -> None:
-        """Assign a subtask and set its dates (None clears them)."""
+        """Rename a subtask, set its status, assign it and set its dates (None clears them)."""
+        if problem := name_problem(title, what="subtask title", limit=MAX_TITLE_LENGTH):
+            self.error_changed.emit(problem)
+            return
         if problem := dates_problem(start_date, due_date):
             self.error_changed.emit(problem)
             return
         body = {
+            "title": clean_display_text(title),
+            "status": status,
             "assignee_id": assignee_id,
             "start_date": _iso(start_date),
             "due_date": _iso(due_date),

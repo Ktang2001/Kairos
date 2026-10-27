@@ -536,3 +536,23 @@ def test_the_first_and_last_allowed_days_are_accepted(
     )
     assert (task["start_date"], task["due_date"]) == ("1900-01-01", "2199-12-31")
     assert _gantt(client, member.headers, project["id"])["range_end"] == "2199-12-31"
+
+
+def test_an_in_progress_subtask_is_half_filled(
+    client: TestClient, member: Account, project: dict, fixed_today: date
+) -> None:
+    task = _add_task(client, member.headers, project["id"])
+    for status in ("todo", "in_progress", "done"):
+        client.post(
+            f"/tasks/{task['id']}/subtasks",
+            json={"title": status, "status": status, "due_date": day(1)},
+            headers=member.headers,
+        )
+    rows = {
+        r["title"]: r["progress"] for r in _gantt(client, member.headers, project["id"])["rows"]
+    }
+    assert rows == {
+        "todo": 0,
+        "in_progress": gantt_service.IN_PROGRESS_WITHOUT_SUBTASKS,
+        "done": 100,
+    }

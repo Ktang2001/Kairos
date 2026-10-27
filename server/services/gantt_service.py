@@ -53,6 +53,16 @@ def task_progress(task: Task) -> int:
     return 0
 
 
+def _subtask_progress(status: str) -> int:
+    """A subtask's bar: empty to do, half in progress (like a task with no
+    subtasks), full done."""
+    if status == TaskStatus.DONE:
+        return 100
+    if status == TaskStatus.IN_PROGRESS:
+        return IN_PROGRESS_WITHOUT_SUBTASKS
+    return 0
+
+
 def _is_overdue(end: date | None, status: str, today: date) -> bool:
     """Past its end date and not done."""
     return end is not None and end < today and status != TaskStatus.DONE
@@ -90,7 +100,7 @@ def _subtask_row(subtask: Subtask, today: date) -> GanttRow:
         start=start,
         end=end,
         estimated=estimated,
-        progress=100 if subtask.status == TaskStatus.DONE else 0,
+        progress=_subtask_progress(subtask.status),
         overdue=_is_overdue(end, subtask.status, today),
         depends_on=[],
     )
