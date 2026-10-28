@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from server.db.schema_check import database_problem
 from server.db.session import SessionLocal
 from server.discovery_announcer import DiscoveryAnnouncer
 from server.main import app
@@ -223,6 +224,12 @@ class ServerWindow(QMainWindow):
             port = find_free_port(HOST, PORT)
         except RuntimeError as exc:
             self.status_label.setText(str(exc))
+            return
+
+        # Say plainly when the database needs upgrading, rather than starting
+        # and failing page by page (or showing a bare "could not start").
+        if problem := database_problem(SessionLocal.kw["bind"]):
+            self.status_label.setText(problem)
             return
 
         ensure_server_cert(CERT_PATH, KEY_PATH)

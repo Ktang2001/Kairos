@@ -17,10 +17,13 @@ def search_users(db: Session, query: str, limit: int = 20) -> list[User]:
     if not query:
         return []
 
-    like = f"%{query}%"
+    # Escape LIKE's wildcards so "%" or "_" match themselves: found by a
+    # security review, a search for "%" listed every account.
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    like = f"%{escaped}%"
     stmt = (
         select(User)
-        .where(or_(User.name.ilike(like), User.email.ilike(like)))
+        .where(or_(User.name.ilike(like, escape="\\"), User.email.ilike(like, escape="\\")))
         .order_by(User.name)
         .limit(limit)
     )

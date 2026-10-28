@@ -88,3 +88,38 @@ def test_widening_reveals_more_of_a_long_name(qtbot: QtBot) -> None:
     label.resize(1400, 20)
     qtbot.wait(20)
     assert len(label.text()) > narrow
+
+
+def test_switching_the_app_theme_does_not_make_error_labels_recurse(qtbot) -> None:
+    """Found by the full suite: switching the theme with error labels open made
+    each one restyle itself hundreds of times until Python's recursion limit."""
+    import tempfile
+    from pathlib import Path
+
+    from PySide6.QtCore import QSettings
+
+    from client.theme import ThemeManager
+    from client.views.widgets import ErrorLabel
+
+    labels = [ErrorLabel() for _ in range(3)]
+    for label in labels:
+        qtbot.addWidget(label)
+        label.show_message("Something went wrong")
+    calls = {"n": 0}
+    original = ErrorLabel._apply_colour
+
+    def counting(self):
+        calls["n"] += 1
+        return original(self)
+
+    ErrorLabel._apply_colour = counting
+    try:
+        ini = Path(tempfile.mkdtemp()) / "theme.ini"
+        manager = ThemeManager(settings=QSettings(str(ini), QSettings.Format.IniFormat))
+        for mode in ("dark", "light", "dark"):
+            manager.set_mode(mode)
+            qtbot.wait(10)
+    finally:
+        ErrorLabel._apply_colour = original
+    # A handful of restyles per label, not hundreds.
+    assert calls["n"] < 20 * len(labels)

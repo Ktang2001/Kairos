@@ -1,23 +1,32 @@
-"""The ``subtasks`` table (unused for now, see below)."""
+"""The ``subtasks`` table: smaller steps inside a task."""
 
 from datetime import date
 
 from sqlalchemy import ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.models.base import Base
 
 
 class Subtask(Base):
-    """A step inside a task. Not used by the API yet: projects, tasks and subtasks (context.md goals
-    4-7) were taken out of the app for now. The table stays so the database matches the migrations.
+    """A smaller step inside a task. Uses the same statuses as tasks.
+
+    Shown on the Gantt chart as a row under its task when it has dates.
     """
 
     __tablename__ = "subtasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"))
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), index=True)
     title: Mapped[str]
-    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    #: Must be a member of the team that owns the parent task's project.
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    start_date: Mapped[date | None]
     due_date: Mapped[date | None]
+    #: A ``shared.statuses.TaskStatus`` value.
     status: Mapped[str]
+    #: Goes up by one with every saved change; see ``Task.version``.
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
+
+    task: Mapped["Task"] = relationship(back_populates="subtasks")  # noqa: F821
+    assignee: Mapped["User | None"] = relationship()  # noqa: F821

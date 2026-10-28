@@ -7,7 +7,7 @@
   that run before any route: request-size limit, local-only API docs, a
   clean 422 for absurdly large numbers;
 * **routers**, one per area: health, auth (sign-in/accounts), messages,
-  teams, users (admin), people, conversations, chat messages, attachments,
+  teams, projects (with the Gantt chart), tasks, dashboard, users (admin), people, conversations, chat messages, attachments,
   server settings, and the live-chat websocket.
 
 Run it with ``python -m server.main`` or through the server window
@@ -25,22 +25,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.exc import OperationalError
 
+from server import log_redaction
 from server.api.attachments import router as attachments_router
 from server.api.auth import router as auth_router
 from server.api.chat_messages import router as chat_messages_router
 from server.api.conversations import router as conversations_router
+from server.api.dashboard import router as dashboard_router
 from server.api.health import router as health_router
 from server.api.messages import router as messages_router
 from server.api.people import router as people_router
+from server.api.projects import router as projects_router
 from server.api.protection import (
     BodySizeLimitMiddleware,
     LocalOnlyDocsMiddleware,
     number_too_large,
 )
 from server.api.server_settings import router as server_settings_router
+from server.api.tasks import router as tasks_router
 from server.api.teams import router as teams_router
 from server.api.users import router as users_router
 from server.api.ws_chat import router as ws_chat_router
+from server.db.schema_check import database_problem
 from server.db.session import get_db
 from server.services import auth_service
 
@@ -63,6 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_gen = get_session()
     db = next(session_gen)
     try:
+        # A database that was never upgraded would start fine and then answer
+        # 500 on the pages that use the newer tables: refuse to start instead.
+        if problem := database_problem(db.connection()):
+            raise RuntimeError(problem)
         auth_service.ensure_roles(db)
     except OperationalError as exc:
         raise RuntimeError(
@@ -80,6 +89,9 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(title="Kairos API", lifespan=lifespan)
 
+    # Keep login tokens (the chat WebSocket's ?token=) out of uvicorn's logs.
+    log_redaction.install()
+
     # MERGE-CRITICAL: keep these three lines. If lost: one huge request can
     # exhaust the host's memory, the API map is shown to anyone on the network,
     # and oversized ids crash requests with a 500. (The sign-in lockout lives
@@ -95,6 +107,9 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(messages_router)
     app.include_router(teams_router)
+    app.include_router(projects_router)
+    app.include_router(tasks_router)
+    app.include_router(dashboard_router)
     app.include_router(users_router)
     app.include_router(people_router)
     app.include_router(conversations_router)

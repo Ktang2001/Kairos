@@ -26,6 +26,8 @@ class ErrorLabel(QLabel):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._colour: str | None = None
+        #: True while this label is restyling itself (see ``_apply_colour``).
+        self._recolouring = False
         # MERGE-CRITICAL: plain text. Messages can quote what the user or
         # server sent; never render HTML. Guarded by:
         # tests/client/test_plain_text_display.py.
@@ -47,13 +49,23 @@ class ErrorLabel(QLabel):
 
     def _apply_colour(self) -> None:
         """Use the red that is readable on the current background."""
-        colour = ERROR_RED_ON_DARK if is_dark(self) else ERROR_RED_ON_LIGHT
         # setStyleSheet itself sends a PaletteChange event, which calls this
-        # again: only restyle when the colour really changes, or it recurses
-        # forever.
+        # again. Comparing colours alone doesn't stop that: while the app-wide
+        # theme stylesheet is being replaced, the background read here can flip
+        # between light and dark on each nested call, so the chosen red flips
+        # too and it recursed until Python gave up (found by the test suite
+        # after a theme switch). The flag ignores the events our own restyle
+        # causes.
+        if self._recolouring:
+            return
+        colour = ERROR_RED_ON_DARK if is_dark(self) else ERROR_RED_ON_LIGHT
         if colour != self._colour:
             self._colour = colour
-            self.setStyleSheet(f"color: {colour};")
+            self._recolouring = True
+            try:
+                self.setStyleSheet(f"color: {colour};")
+            finally:
+                self._recolouring = False
 
 
 class ElidedLabel(QLabel):

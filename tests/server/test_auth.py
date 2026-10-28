@@ -4,6 +4,7 @@ from server import email_sender
 from server.models.session import Session
 from server.models.user import User
 from server.services import verification_service
+from server.services.session_service import hash_token
 from tests.server.conftest import auth_headers
 
 
@@ -207,7 +208,9 @@ def test_login_with_2fa_issues_a_usable_session_token(
 
     result = _login_and_verify(client, sent_codes, "alice@example.com", "hunter22")
     token = result["token"]
-    assert db_session.get(Session, token) is not None
+    # Only the token's hash is stored, never the token itself.
+    assert db_session.get(Session, hash_token(token)) is not None
+    assert db_session.get(Session, token) is None
 
     protected = client.get("/people/me", headers=auth_headers(token))
     assert protected.status_code == 200
@@ -231,7 +234,7 @@ def test_login_with_2fa_right_after_login_hits_resend_cooldown_cleanly(
 
 
 def test_login_with_2fa_returns_a_clean_503_when_email_sending_fails(
-    client: TestClient, sent_codes, monkeypatch
+    client: TestClient, sent_codes, monkeypatch, caplog
 ) -> None:
     """Regression test: if SMTP isn't configured (or fails for any reason), this
     must 503 with a clear message, not crash with an unhandled 500 (reproduces
@@ -248,7 +251,11 @@ def test_login_with_2fa_returns_a_clean_503_when_email_sending_fails(
     )
 
     assert response.status_code == 503
-    assert "KAIROS_SMTP_USER" in response.json()["detail"]
+    # A general message for the person signing in; the configuration details
+    # stay in the server log (found in a code review: they used to be sent back).
+    assert "KAIROS_SMTP_USER" not in response.json()["detail"]
+    assert "couldn't send your verification email" in response.json()["detail"]
+    assert "KAIROS_SMTP_USER" in caplog.text
 
 
 def test_verify_code_rejects_wrong_code(client: TestClient, sent_codes) -> None:

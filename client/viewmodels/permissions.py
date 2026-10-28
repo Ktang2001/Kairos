@@ -37,3 +37,14 @@ def can_leave_team(me: dict, team: dict) -> bool:
 def can_manage_users(me: dict) -> bool:
     """Only admins see the Users tab."""
     return is_admin(me)
+
+
+def can_manage_projects(me: dict, team: dict) -> bool:
+    """Create, rename, complete and delete a team's projects: its lead or an admin."""
+    return can_manage_team(me, team)
+
+
+def can_delete_tasks(me: dict, team: dict) -> bool:
+    """Delete tasks and subtasks: the team's lead or an admin. (Any member may
+    create, edit and assign them.)"""
+    return can_manage_team(me, team)

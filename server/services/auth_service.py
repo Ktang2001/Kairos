@@ -8,6 +8,7 @@ from the Nick2 branch with its team and admin features; they never touch
 passwords.
 """
 
+import functools
 import hashlib
 import hmac
 import os
@@ -18,29 +19,70 @@ from sqlalchemy.orm import Session, selectinload
 
 from server.models.role import Role
 from server.models.user import User
+from shared.account_rules import (
+    EMAIL_PATTERN,
+    MAX_EMAIL_LENGTH,
+    MAX_NAME_LENGTH,
+    MAX_PASSWORD_LENGTH,
+)
 from shared.roles import ALL_ROLES
+from shared.text_rules import clean_display_text
 
 _PBKDF2_ITERATIONS = 200_000
 _MIN_PASSWORD_LENGTH = 8
 DEFAULT_SIGNUP_ROLE = "member"
 
 _MAX_FAILED_ATTEMPTS = 5
+#: After _MAX_FAILED_ATTEMPTS wrong passwords the email is locked this long;
+#: each further failure doubles it, up to _MAX_LOCKOUT_SECONDS. Found by a
+#: security review: a flat 30 s lock after every 5 failures still allowed
+#: ~14,000 guesses a day per account; this allows about 240.
 _COOLDOWN_SECONDS = 30.0
+_MAX_LOCKOUT_SECONDS = 15 * 60.0
+#: Failures older than this are forgotten.
+_FAILURE_MEMORY_SECONDS = 60 * 60.0
+#: When the table tracks more emails than this, entries with no recent failures
+#: are dropped, so guessing at made-up emails can't grow it without limit.
+_MAX_TRACKED_EMAILS = 10_000
 # In-memory only (per-process) - resets on server restart, which is an acceptable
 # tradeoff at this app's two-person LAN scale. Keyed by lowercased email.
 _failed_login_attempts: dict[str, list[float]] = {}
 
 
-def _is_cooling_down(email: str) -> bool:
-    """True if `email` has hit _MAX_FAILED_ATTEMPTS within the last _COOLDOWN_SECONDS."""
+def _recent_failures(email: str, now: float) -> list[float]:
+    """The email's failure times within _FAILURE_MEMORY_SECONDS (older ones are dropped)."""
+    attempts = [
+        t for t in _failed_login_attempts.get(email, []) if now - t < _FAILURE_MEMORY_SECONDS
+    ]
+    if attempts:
+        _failed_login_attempts[email] = attempts
+    else:
+        _failed_login_attempts.pop(email, None)
+    return attempts
+
+
+def _lockout_remaining(email: str) -> float:
+    """Seconds until `email` may try again (0 when it isn't locked).
+
+    The lock runs from the most recent failure: _COOLDOWN_SECONDS once there are
+    _MAX_FAILED_ATTEMPTS failures, doubling with each failure after that.
+    """
     now = time.monotonic()
-    attempts = [t for t in _failed_login_attempts.get(email, []) if now - t < _COOLDOWN_SECONDS]
-    _failed_login_attempts[email] = attempts
-    return len(attempts) >= _MAX_FAILED_ATTEMPTS
+    attempts = _recent_failures(email, now)
+    if len(attempts) < _MAX_FAILED_ATTEMPTS:
+        return 0.0
+    extra = len(attempts) - _MAX_FAILED_ATTEMPTS
+    lockout = min(_COOLDOWN_SECONDS * 2**extra, _MAX_LOCKOUT_SECONDS)
+    return max(0.0, attempts[-1] + lockout - now)
 
 
 def _record_failed_attempt(email: str) -> None:
-    _failed_login_attempts.setdefault(email, []).append(time.monotonic())
+    """Note one wrong password for `email`, pruning the table if it has grown large."""
+    now = time.monotonic()
+    if len(_failed_login_attempts) >= _MAX_TRACKED_EMAILS:
+        for tracked in list(_failed_login_attempts):
+            _recent_failures(tracked, now)
+    _failed_login_attempts.setdefault(email, []).append(now)
 
 
 def _clear_failed_attempts(email: str) -> None:
@@ -68,6 +110,12 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
+@functools.cache
+def _dummy_hash() -> str:
+    """A real-looking stored hash to check passwords against for unknown emails."""
+    return hash_password("no account has this password")
+
+
 def _get_or_create_role(db: Session, name: str) -> Role:
     role = db.query(Role).filter_by(name=name).first()
     if role is None:
@@ -86,14 +134,21 @@ def create_user(
     client/views/auth_dialog.py) of whether POST /auth/login will require an
     emailed code; it has no effect on signup itself, which never does 2FA.
     """
-    name = name.strip()
+    # The shared limits are enforced here too, not only by the client: found by
+    # a security review, the server took a 1 MB password, unlimited names and
+    # emails, and names made of invisible characters.
+    name = clean_display_text(name)
     email = email.strip().lower()
     if not name:
         raise ValueError("name is required")
-    if "@" not in email:
+    if len(name) > MAX_NAME_LENGTH:
+        raise ValueError(f"name can be at most {MAX_NAME_LENGTH} characters")
+    if len(email) > MAX_EMAIL_LENGTH or not EMAIL_PATTERN.match(email):
         raise ValueError("a valid email is required")
     if len(password) < _MIN_PASSWORD_LENGTH:
         raise ValueError(f"password must be at least {_MIN_PASSWORD_LENGTH} characters")
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise ValueError(f"password can be at most {MAX_PASSWORD_LENGTH} characters")
     if db.query(User).filter_by(email=email).first() is not None:
         raise ValueError("that email is already registered")
 
@@ -117,13 +172,18 @@ class TooManyAttemptsError(Exception):
 
 def authenticate(db: Session, email: str, password: str) -> User | None:
     email = email.strip().lower()
-    if _is_cooling_down(email):
+    wait = _lockout_remaining(email)
+    if wait > 0:
         raise TooManyAttemptsError(
-            f"too many failed attempts - try again in {int(_COOLDOWN_SECONDS)} seconds"
+            f"too many failed attempts - try again in {int(wait) + 1} seconds"
         )
 
     user = db.query(User).filter_by(email=email).first()
-    if user is None or not verify_password(password, user.password_hash):
+    # An unknown email still costs one full password check, so the reply takes
+    # as long as for a real account: found by a security review, the time
+    # difference (3 ms vs 40 ms) told an attacker which emails have accounts.
+    stored = user.password_hash if user is not None else _dummy_hash()
+    if not verify_password(password[: MAX_PASSWORD_LENGTH + 1], stored) or user is None:
         _record_failed_attempt(email)
         return None
 

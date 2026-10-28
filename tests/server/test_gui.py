@@ -267,3 +267,16 @@ def test_each_message_is_logged_once(
     server_window._poll_new_messages()  # the next poll sees the same two
     assert server_window.log.toPlainText().count("Nick: hi") == 1
     assert server_window.log.toPlainText().count("Kaleb: hello") == 1
+
+
+def test_an_old_database_is_reported_and_the_server_not_started(
+    server_window: gui.ServerWindow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Found in use: an un-upgraded database made the Projects tab answer 500."""
+    monkeypatch.setattr(
+        gui, "database_problem", lambda bind: "The database needs upgrading - run alembic"
+    )
+    server_window._on_toggle_clicked()
+    assert "needs upgrading" in server_window.status_label.text()
+    assert server_window._uvicorn_server is None
+    assert server_window.toggle_button.text() == "Start Server"

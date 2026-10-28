@@ -176,3 +176,78 @@ def test_migrations_upgrade_downgrade_upgrade(tmp_path: Path) -> None:
     # Autogenerate cannot see this expression index on SQLite, so it was added
     # to the migration by hand; make sure it really is there.
     assert "uq_teams_name_lower" in names
+
+
+# ------------------------------------------- database version (found in use)
+
+
+def _versioned_engine(tmp_path, revision: str):
+    """A database built from the models but stamped with ``revision``."""
+    from sqlalchemy import create_engine
+
+    from server.models import Base
+
+    engine = create_engine(f"sqlite:///{(tmp_path / 'v.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    with engine.begin() as c:
+        c.exec_driver_sql("create table alembic_version (version_num varchar(32) primary key)")
+        c.exec_driver_sql(f"insert into alembic_version values ('{revision}')")
+    return engine
+
+
+def test_an_upgraded_database_passes_the_check(tmp_path) -> None:
+    from server.db.schema_check import code_head, database_problem
+
+    assert database_problem(_versioned_engine(tmp_path, code_head())) is None
+
+
+def test_an_old_database_is_refused_with_the_command_to_fix_it(tmp_path) -> None:
+    """Found in use: an un-upgraded database made the Projects tab answer 500."""
+    from server.db.schema_check import UPGRADE_COMMAND, database_problem
+
+    problem = database_problem(_versioned_engine(tmp_path, "b3dc54a36214"))
+    assert problem is not None
+    assert UPGRADE_COMMAND in problem
+    assert "b3dc54a36214" in problem
+
+
+def test_a_database_newer_than_the_code_is_explained(tmp_path) -> None:
+    from server.db.schema_check import database_problem
+
+    problem = database_problem(_versioned_engine(tmp_path, "ffffffffffff"))
+    assert problem is not None and "newer than this copy" in problem
+
+
+def test_a_database_without_a_version_record_is_not_checked(tmp_path) -> None:
+    from sqlalchemy import create_engine
+
+    from server.db.schema_check import database_problem
+    from server.models import Base
+
+    engine = create_engine(f"sqlite:///{(tmp_path / 'plain.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    assert database_problem(engine) is None
+
+
+def test_the_server_refuses_to_start_on_an_old_database(tmp_path) -> None:
+    import pytest
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
+
+    from server.db.session import get_db
+    from server.main import create_app
+
+    engine = _versioned_engine(tmp_path, "b3dc54a36214")
+    factory = sessionmaker(bind=engine)
+
+    def override():
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app = create_app()
+    app.dependency_overrides[get_db] = override
+    with pytest.raises(RuntimeError, match="needs upgrading"), TestClient(app):
+        pass
