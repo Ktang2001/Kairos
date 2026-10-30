@@ -38,6 +38,27 @@ def test_group_conversation_label_shows_name_and_member_count() -> None:
     assert result[0]["label"] == "Project Team  ·  group, 3 members"
 
 
+def test_team_chat_label_says_it_is_a_team_chat() -> None:
+    api = _FakeApiClient(
+        user_id=1,
+        conversations=[
+            {
+                "id": 1,
+                "kind": "group",
+                "name": "Alpha",
+                "team_id": 7,
+                "created_at": "2026-10-01T00:00:00",
+                "participants": [{"user_id": 1, "role": "admin"}, {"user_id": 2, "role": "member"}],
+            }
+        ],
+        people={},
+    )
+
+    result = ConversationListViewModel(api).load_conversations()
+
+    assert result[0]["label"] == "Alpha  ·  team chat, 2 members"
+
+
 def test_direct_conversation_label_shows_other_persons_name() -> None:
     api = _FakeApiClient(
         user_id=1,

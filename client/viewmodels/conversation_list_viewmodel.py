@@ -5,7 +5,8 @@ def _label_for(conversation: dict, current_user_id: int, api_client: ApiClient) 
     if conversation["kind"] == "group":
         member_count = len(conversation["participants"])
         name = conversation.get("name") or "Unnamed group"
-        return f"{name}  ·  group, {member_count} members"
+        kind = "team chat" if conversation.get("team_id") is not None else "group"
+        return f"{name}  ·  {kind}, {member_count} members"
 
     other = next((p for p in conversation["participants"] if p["user_id"] != current_user_id), None)
     if other is None:

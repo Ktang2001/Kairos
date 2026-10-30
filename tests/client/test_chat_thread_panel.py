@@ -8,12 +8,14 @@ class _FakeApiClient:
         self._messages_by_conversation: dict[int, list[dict]] = {
             1: [{"id": 1, "sender_user_id": 1, "body": "hello there", "attachments": []}]
         }
-        self._conversation_kind: dict[int, str] = {1: "direct", 2: "group"}
+        self._conversation_kind: dict[int, str] = {1: "direct", 2: "group", 3: "group"}
+        self._conversation_team: dict[int, int] = {3: 7}
 
     def get_conversation(self, conversation_id: int) -> dict:
         return {
             "id": conversation_id,
             "kind": self._conversation_kind.get(conversation_id, "direct"),
+            "team_id": self._conversation_team.get(conversation_id),
         }
 
     def list_messages(self, conversation_id: int, after_id: int = 0, limit: int = 50) -> list[dict]:
@@ -104,3 +106,13 @@ def test_manage_members_button_only_shown_for_group_conversations(qtbot) -> None
 
     panel.show_conversation(2, title="Group Chat")
     assert panel.manage_members_button.isVisible()
+
+
+def test_manage_members_button_hidden_for_a_team_chat(qtbot) -> None:
+    panel = ChatThreadPanel(_FakeApiClient())
+    qtbot.addWidget(panel)
+    panel.show()
+
+    panel.show_conversation(3, title="Alpha")
+
+    assert not panel.manage_members_button.isVisible()

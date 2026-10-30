@@ -4,6 +4,7 @@ from sqlalchemy import DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.models.base import Base
+from server.models.team import Team
 from shared.chat_enums import ParticipantRole
 
 
@@ -19,6 +20,14 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(), server_default=func.now(), nullable=False
     )
+
+    #: Set for a team's own group chat, whose participants follow the team's
+    #: members (server/services/conversation_service.py::sync_team_conversation).
+    #: At most one chat per team; None for every other conversation, and again
+    #: once the team is deleted (the chat and its history are kept).
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), unique=True)
+
+    team: Mapped[Team | None] = relationship()
 
     participants: Mapped[list["ConversationParticipant"]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan"

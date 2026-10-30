@@ -2,7 +2,8 @@
 
 ``create_app()`` assembles it from three kinds of parts:
 
-* **start-up** (``lifespan``): makes sure the role rows exist;
+* **start-up** (``lifespan``): makes sure the role rows exist and every team
+  has its team chat;
 * **protections** (middleware + error handlers from ``server/api/protection.py``)
   that run before any route: request-size limit, local-only API docs, a
   clean 422 for absurdly large numbers;
@@ -47,7 +48,7 @@ from server.api.users import router as users_router
 from server.api.ws_chat import router as ws_chat_router
 from server.db.schema_check import database_problem
 from server.db.session import get_db
-from server.services import auth_service
+from server.services import auth_service, team_service
 
 
 @asynccontextmanager
@@ -73,6 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if problem := database_problem(db.connection()):
             raise RuntimeError(problem)
         auth_service.ensure_roles(db)
+        team_service.ensure_team_conversations(db)
     except OperationalError as exc:
         raise RuntimeError(
             "The database has not been set up. From the repo root, run:\n"

@@ -19,6 +19,8 @@ class ConversationOut(BaseModel):
     name: str | None
     created_by_user_id: int
     created_at: datetime
+    #: Set for a team's own chat, whose participants follow the team's members.
+    team_id: int | None = None
     participants: list[ParticipantOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

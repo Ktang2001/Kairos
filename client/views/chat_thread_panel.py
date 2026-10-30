@@ -52,7 +52,9 @@ class ChatThreadPanel(QWidget):
         self.attach_button.clicked.connect(self._on_attach)
         self.manage_members_button = QPushButton("Manage Members...")
         self.manage_members_button.clicked.connect(self._on_manage_members)
-        self.manage_members_button.setVisible(False)  # shown only for group chats
+        # Shown only for group chats, and not for a team's chat: who is in that
+        # follows the team, so it is changed from the Teams page instead.
+        self.manage_members_button.setVisible(False)
 
         self.status_label = QLabel("")
 
@@ -102,7 +104,9 @@ class ChatThreadPanel(QWidget):
             conversation = self.api_client.get_conversation(conversation_id)
         except httpx.HTTPError:
             return  # leave the button hidden rather than fail the whole panel
-        self.manage_members_button.setVisible(conversation["kind"] == "group")
+        self.manage_members_button.setVisible(
+            conversation["kind"] == "group" and conversation.get("team_id") is None
+        )
 
     def _refresh(self) -> None:
         if self.view_model is None:

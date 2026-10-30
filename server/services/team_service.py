@@ -13,6 +13,9 @@ Who may do what:
   cannot be probed to learn which teams exist.
 * When someone leaves or is removed, their tasks and subtasks in the team's
   projects are unassigned, so nothing stays assigned to a non-member.
+* Every team has its own group chat whose participants are the team's
+  members, with the lead as its admin. Each change below updates it in the
+  same transaction (``conversation_service.sync_team_conversation``).
 
 Routes translate the exceptions below into HTTP status codes.
 """
@@ -27,7 +30,7 @@ from server.models.subtask import Subtask
 from server.models.task import Task
 from server.models.team import Team
 from server.models.user import User
-from server.services import auth_service
+from server.services import auth_service, conversation_service
 from shared.roles import ROLE_ADMIN
 
 
@@ -152,6 +155,7 @@ def create_team(db: OrmSession, *, name: str, creator: User) -> Team:
 
     team = Team(name=name, lead_id=creator.id, members=[creator])
     db.add(team)
+    conversation_service.sync_team_conversation(db, team)
     _commit_or_name_taken(db)
     return _reload(db, team.id)
 
@@ -193,6 +197,7 @@ def rename_team(db: OrmSession, team_id: int, actor: User, *, name: str) -> Team
         raise TeamNameTaken(name)
 
     team.name = name
+    conversation_service.sync_team_conversation(db, team)
     _commit_or_name_taken(db)
     return _reload(db, team_id)
 
@@ -211,6 +216,8 @@ def delete_team(db: OrmSession, team_id: int, actor: User) -> None:
     if project_count:
         raise TeamHasProjects(team_id)
 
+    # The team's chat outlives the team, as an ordinary group chat.
+    conversation_service.unlink_team_conversation(db, team.id)
     # Deleting through the ORM also deletes this team's team_members rows,
     # because ``members`` is a many-to-many relationship. SQLite would not do
     # it on its own: foreign keys are not enforced (see context.md).
@@ -229,6 +236,7 @@ def add_member(db: OrmSession, team_id: int, actor: User, *, email: str) -> Team
         raise AlreadyMember(user.id)
 
     team.members.append(user)
+    conversation_service.sync_team_conversation(db, team)
     try:
         db.commit()
     except IntegrityError as exc:
@@ -256,6 +264,7 @@ def remove_member(db: OrmSession, team_id: int, actor: User, *, user_id: int) ->
 
     team.members.remove(member)
     _unassign_team_work(db, team.id, member.id)
+    conversation_service.sync_team_conversation(db, team)
     db.commit()
 
 
@@ -288,5 +297,18 @@ def change_lead(db: OrmSession, team_id: int, actor: User, *, new_lead_id: int) 
 
     if team.lead_id != new_lead_id:
         team.lead_id = new_lead_id
+        conversation_service.sync_team_conversation(db, team)
         db.commit()
     return _reload(db, team_id)
+
+
+def ensure_team_conversations(db: OrmSession) -> None:
+    """Give every team its chat and bring each chat in line with its team.
+
+    Run at every server start (``server.main.lifespan``), so teams created
+    before team chats existed get one, and any drift is repaired. Safe to call
+    repeatedly: a team whose chat already matches is left untouched.
+    """
+    for team in db.scalars(_team_query()):
+        conversation_service.sync_team_conversation(db, team)
+    db.commit()

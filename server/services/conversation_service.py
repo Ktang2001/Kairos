@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from server.models.conversation import Conversation, ConversationParticipant
+from server.models.team import Team
 from shared.chat_enums import ConversationKind, ParticipantRole
 
 
@@ -19,6 +20,11 @@ class NotConversationAdminError(ConversationError):
 
 class LastAdminError(ConversationError):
     """Raised when an operation would leave a group chat with zero admins."""
+
+
+class TeamConversationManaged(ConversationError):
+    """Raised on a manual membership change to a team's chat: the team's own
+    membership decides who is in it (see ``sync_team_conversation``)."""
 
 
 def _with_participants(stmt):
@@ -146,6 +152,7 @@ def add_participant(
     if conversation is None:
         raise NotParticipantError(f"conversation {conversation_id} does not exist")
     require_conversation_admin(db, conversation_id, acting_user_id)
+    _refuse_if_team_chat(conversation)
     if conversation.kind != ConversationKind.GROUP.value:
         raise ValueError("cannot add participants to a direct conversation")
     if db.get(ConversationParticipant, (conversation_id, new_user_id)) is not None:
@@ -172,6 +179,7 @@ def remove_participant(
     target = require_participant(db, conversation_id, target_user_id)
     if acting_user_id != target_user_id:
         require_conversation_admin(db, conversation_id, acting_user_id)
+    _refuse_if_team_chat(conversation)
 
     if target.role == ParticipantRole.ADMIN.value and _count_admins(conversation) <= 1:
         raise LastAdminError("cannot remove the last admin of a conversation")
@@ -192,6 +200,7 @@ def change_participant_role(
         raise NotParticipantError(f"conversation {conversation_id} does not exist")
     require_conversation_admin(db, conversation_id, acting_user_id)
     target = require_participant(db, conversation_id, target_user_id)
+    _refuse_if_team_chat(conversation)
 
     if (
         target.role == ParticipantRole.ADMIN.value
@@ -203,3 +212,59 @@ def change_participant_role(
     target.role = new_role
     db.commit()
     return get_conversation(db, conversation_id)
+
+
+def _refuse_if_team_chat(conversation: Conversation) -> None:
+    """Membership of a team's chat follows the team; refuse changing it by hand."""
+    if conversation.team_id is not None:
+        raise TeamConversationManaged(f"conversation {conversation.id} is a team chat")
+
+
+def get_team_conversation(db: Session, team_id: int) -> Conversation | None:
+    """The team's own chat, or None if it has none yet."""
+    return db.scalars(
+        _with_participants(select(Conversation).where(Conversation.team_id == team_id))
+    ).first()
+
+
+def sync_team_conversation(db: Session, team: Team) -> Conversation:
+    """Create the team's chat if it has none, then make it match the team.
+
+    Afterwards the chat is named after the team, its participants are exactly
+    the team's members, and the lead is its only admin. Does not commit: the
+    team service calls this inside its own transaction, so a team change and
+    the matching chat change are saved (or refused) together.
+    """
+    conversation = None if team.id is None else get_team_conversation(db, team.id)
+    if conversation is None:
+        # Linked through the relationship rather than ids, so this also works
+        # for a team that has not been flushed yet (it has no id until then).
+        conversation = Conversation(
+            kind=ConversationKind.GROUP.value, team=team, created_by_user_id=team.lead_id
+        )
+        db.add(conversation)
+    conversation.name = team.name
+
+    member_ids = {member.id for member in team.members}
+    for participant in list(conversation.participants):
+        if participant.user_id not in member_ids:
+            conversation.participants.remove(participant)
+    present = {participant.user_id for participant in conversation.participants}
+    for user_id in sorted(member_ids - present):
+        conversation.participants.append(ConversationParticipant(user_id=user_id))
+    for participant in conversation.participants:
+        participant.role = (
+            ParticipantRole.ADMIN.value
+            if participant.user_id == team.lead_id
+            else ParticipantRole.MEMBER.value
+        )
+    return conversation
+
+
+def unlink_team_conversation(db: Session, team_id: int) -> None:
+    """Turn a team's chat into an ordinary group chat, for when the team is
+    deleted: the conversation and its history stay with the people in it.
+    Does not commit."""
+    conversation = get_team_conversation(db, team_id)
+    if conversation is not None:
+        conversation.team_id = None

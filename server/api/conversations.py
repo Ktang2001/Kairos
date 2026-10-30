@@ -16,9 +16,13 @@ from server.services.conversation_service import (
     LastAdminError,
     NotConversationAdminError,
     NotParticipantError,
+    TeamConversationManaged,
 )
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+#: Shown when someone tries to change who is in a team's chat by hand.
+TEAM_CHAT_MANAGED_DETAIL = "This is a team chat - who is in it follows the team's members"
 
 
 @router.get("", response_model=list[ConversationOut])
@@ -108,6 +112,8 @@ async def add_participant(
         )
     except (NotParticipantError, NotConversationAdminError) as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except TeamConversationManaged:
+        raise HTTPException(status_code=409, detail=TEAM_CHAT_MANAGED_DETAIL) from None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -135,6 +141,8 @@ async def remove_participant(
         )
     except (NotParticipantError, NotConversationAdminError) as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except TeamConversationManaged:
+        raise HTTPException(status_code=409, detail=TEAM_CHAT_MANAGED_DETAIL) from None
     except LastAdminError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -163,6 +171,8 @@ async def update_participant_role(
         )
     except (NotParticipantError, NotConversationAdminError) as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except TeamConversationManaged:
+        raise HTTPException(status_code=409, detail=TEAM_CHAT_MANAGED_DETAIL) from None
     except LastAdminError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
