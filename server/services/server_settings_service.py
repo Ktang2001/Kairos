@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -15,11 +16,40 @@ def get_settings(db: Session) -> ServerSettings:
     return settings
 
 
+#: Shown when a Jitsi address is refused.
+JITSI_URL_MESSAGE = "The meeting server must be an https:// address, like https://meet.jit.si"
+
+
+def normalize_jitsi_base_url(url: str) -> str:
+    """Check a Jitsi server address and return it without a trailing slash.
+
+    Only a plain https:// address is accepted: meeting links are opened in
+    people's browsers, so an http:// one would send the call unencrypted, and
+    a query, fragment or user:password part has no business in a base address
+    that room names are appended to. A path is allowed (a self-hosted Jitsi
+    under /meet). Raises ValueError otherwise.
+    """
+    url = url.strip().rstrip("/")
+    parts = urlsplit(url)
+    if (
+        parts.scheme != "https"
+        or not parts.hostname
+        or parts.query
+        or parts.fragment
+        or parts.username
+        or parts.password
+        or any(char.isspace() for char in url)
+    ):
+        raise ValueError(JITSI_URL_MESSAGE)
+    return url
+
+
 def update_settings(
     db: Session,
     display_name: str | None = None,
     upload_root: str | None = None,
     max_upload_size_bytes: int | None = None,
+    jitsi_base_url: str | None = None,
 ) -> ServerSettings:
     """Update any subset of the server's settings.
 
@@ -57,6 +87,9 @@ def update_settings(
         if max_upload_size_bytes <= 0:
             raise ValueError("max_upload_size_bytes must be positive")
         settings.max_upload_size_bytes = max_upload_size_bytes
+
+    if jitsi_base_url is not None:
+        settings.jitsi_base_url = normalize_jitsi_base_url(jitsi_base_url)
 
     db.commit()
     db.refresh(settings)

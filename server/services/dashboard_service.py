@@ -30,9 +30,10 @@ from server.schemas.dashboard import (
     TaskBrief,
     Workload,
 )
+from server.schemas.meeting import to_meeting_out
 from server.schemas.project import count_statuses
 from server.schemas.user import to_user_out
-from server.services import team_service
+from server.services import meeting_service, team_service
 from shared.statuses import ProjectStatus, TaskStatus
 
 #: "Due soon" means due between today and this many days from today, inclusive.
@@ -41,6 +42,8 @@ DUE_SOON_DAYS = 7
 RECENT_DAYS = 7
 #: How many of the viewer's next deadlines ``my_work.upcoming`` lists.
 UPCOMING_LIMIT = 5
+#: How many upcoming meetings ``meetings`` lists.
+MEETINGS_LIMIT = 10
 
 
 def local_today() -> date:
@@ -100,6 +103,7 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
     open_tasks = [task for task in tasks if _is_open(task)]
     open_subtasks = [s for task in tasks for s in task.subtasks if _is_open(s)]
     recent_cutoff = now - timedelta(days=RECENT_DAYS)
+    meetings = meeting_service.upcoming_for(db, viewer, now=now)
 
     overview = Overview(
         teams=len(teams),
@@ -112,6 +116,7 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
         completed_recently=sum(
             1 for t in tasks if t.completed_at is not None and t.completed_at >= recent_cutoff
         ),
+        upcoming_meetings=len(meetings),
     )
 
     project_names = {project.id: project.name for project in projects}
@@ -163,6 +168,12 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
         my_work=my_work,
         projects=project_stats,
         workload=_workload(teams, open_tasks, open_subtasks, today),
+        meetings=[
+            to_meeting_out(
+                meeting, viewer, now=now, can_cancel=meeting_service.can_cancel(meeting, viewer)
+            )
+            for meeting in meetings[:MEETINGS_LIMIT]
+        ],
     )
 
 

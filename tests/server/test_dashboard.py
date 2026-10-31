@@ -81,7 +81,9 @@ def test_a_user_with_no_teams_gets_an_all_zero_dashboard(
         "due_soon": 0,
         "unassigned_open": 0,
         "completed_recently": 0,
+        "upcoming_meetings": 0,
     }
+    assert body["meetings"] == []
     assert body["my_work"] == {
         "open": 0,
         "in_progress": 0,

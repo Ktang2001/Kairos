@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from server.models.chat_message import ChatMessage
 
@@ -56,5 +56,6 @@ def list_messages_after(
         .where(ChatMessage.id > after_id)
         .order_by(ChatMessage.id.asc())
         .limit(limit)
+        .options(selectinload(ChatMessage.meeting))
     )
     return list(db.scalars(stmt))

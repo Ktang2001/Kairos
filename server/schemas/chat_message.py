@@ -18,5 +18,9 @@ class ChatMessageOut(BaseModel):
     client_token: str | None
     created_at: datetime
     attachments: list[AttachmentOut] = Field(default_factory=list)
+    #: Set when this message announces a meeting; the client fetches the
+    #: meeting itself (GET /conversations/{id}/meetings), since replies change
+    #: after the message is sent and what each viewer sees differs.
+    meeting_id: int | None = None
 
     model_config = {"from_attributes": True}

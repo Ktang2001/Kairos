@@ -10,6 +10,9 @@ class ServerInfoPublic(BaseModel):
 
     display_name: str
     max_upload_size_bytes: int
+    #: Where meetings are held. Public on purpose: the client's Profile page
+    #: opens it so people can sign in to Jitsi before their first meeting.
+    jitsi_base_url: str
 
     model_config = {"from_attributes": True}
 
@@ -20,3 +23,4 @@ class ServerSettingsUpdate(BaseModel):
     display_name: str | None = None
     upload_root: str | None = None
     max_upload_size_bytes: int | None = None
+    jitsi_base_url: str | None = None

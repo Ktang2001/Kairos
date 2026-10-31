@@ -9,7 +9,7 @@
   clean 422 for absurdly large numbers;
 * **routers**, one per area: health, auth (sign-in/accounts), messages,
   teams, projects (with the Gantt chart), tasks, dashboard, users (admin), people, conversations, chat messages, attachments,
-  server settings, and the live-chat websocket.
+  meetings, server settings, and the live-chat websocket.
 
 Run it with ``python -m server.main`` or through the server window
 (``python -m server.gui``).
@@ -33,6 +33,7 @@ from server.api.chat_messages import router as chat_messages_router
 from server.api.conversations import router as conversations_router
 from server.api.dashboard import router as dashboard_router
 from server.api.health import router as health_router
+from server.api.meetings import router as meetings_router
 from server.api.messages import router as messages_router
 from server.api.people import router as people_router
 from server.api.projects import router as projects_router
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations_router)
     app.include_router(chat_messages_router)
     app.include_router(attachments_router)
+    app.include_router(meetings_router)
     app.include_router(server_settings_router)
     app.include_router(ws_chat_router)
     return app

@@ -12,6 +12,7 @@ from server.models.attachment import Attachment
 from server.models.base import Base
 from server.models.chat_message import ChatMessage
 from server.models.conversation import Conversation, ConversationParticipant
+from server.models.meeting import Meeting, MeetingRsvp
 from server.models.message import Message
 from server.models.pending_verification import PendingVerification
 from server.models.project import Project
@@ -29,6 +30,8 @@ __all__ = [
     "ChatMessage",
     "Conversation",
     "ConversationParticipant",
+    "Meeting",
+    "MeetingRsvp",
     "Message",
     "PendingVerification",
     "Project",

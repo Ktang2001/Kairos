@@ -4,6 +4,7 @@ from datetime import date
 
 from pydantic import BaseModel
 
+from server.schemas.meeting import MeetingOut
 from server.schemas.project import StatusCounts
 from server.schemas.user import UserOut
 from shared.statuses import ProjectStatus, TaskStatus
@@ -49,6 +50,8 @@ class Overview(BaseModel):
     unassigned_open: int
     #: Marked done within the last ``RECENT_DAYS`` days.
     completed_recently: int
+    #: Meetings the viewer can see that aren't cancelled or over.
+    upcoming_meetings: int
 
 
 class MyWork(BaseModel):
@@ -103,3 +106,6 @@ class DashboardOut(BaseModel):
     my_work: MyWork
     projects: list[ProjectStats]
     workload: list[Workload]
+    #: The next ``MEETINGS_LIMIT`` of those meetings, soonest first (one that
+    #: is under way comes first), for the Meetings list and the calendar.
+    meetings: list[MeetingOut]

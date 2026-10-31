@@ -13,7 +13,14 @@ Usage in a route:
 
 from fastapi import HTTPException, status
 
-from server.services import project_service, task_service, team_service, user_service
+from server.services import (
+    meeting_service,
+    project_service,
+    task_service,
+    team_service,
+    user_service,
+)
+from shared.date_rules import DATE_RANGE_MESSAGE
 
 ERRORS: dict[type[Exception], tuple[int, str]] = {
     # Teams
@@ -80,6 +87,35 @@ ERRORS: dict[type[Exception], tuple[int, str]] = {
     task_service.DependencyNotFound: (
         status.HTTP_404_NOT_FOUND,
         "This task does not depend on that task",
+    ),
+    # Meetings
+    meeting_service.MeetingNotFound: (status.HTTP_404_NOT_FOUND, "Meeting not found"),
+    meeting_service.ConversationNotFound: (status.HTTP_404_NOT_FOUND, "Conversation not found"),
+    meeting_service.NotOnTeam: (
+        status.HTTP_403_FORBIDDEN,
+        "Only the team's members can start a meeting for it",
+    ),
+    meeting_service.NotMeetingHost: (
+        status.HTTP_403_FORBIDDEN,
+        "Only the meeting's host or an admin can cancel it",
+    ),
+    meeting_service.HostCannotRespond: (
+        status.HTTP_409_CONFLICT,
+        "You're hosting this meeting",
+    ),
+    meeting_service.MeetingCancelled: (status.HTTP_409_CONFLICT, "This meeting was cancelled"),
+    meeting_service.MeetingEnded: (status.HTTP_409_CONFLICT, "This meeting has already ended"),
+    meeting_service.StartInPast: (
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "A scheduled meeting can't start in the past",
+    ),
+    meeting_service.StartOutOfRange: (
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        DATE_RANGE_MESSAGE,
+    ),
+    meeting_service.ClientTokenReused: (
+        status.HTTP_409_CONFLICT,
+        "That request id was already used for something else - try again",
     ),
     # Users (admin)
     user_service.UserNotFound: (status.HTTP_404_NOT_FOUND, "User not found"),

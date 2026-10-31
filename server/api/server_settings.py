@@ -37,6 +37,7 @@ async def update_server_info(
             display_name=payload.display_name,
             upload_root=payload.upload_root,
             max_upload_size_bytes=payload.max_upload_size_bytes,
+            jitsi_base_url=payload.jitsi_base_url,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

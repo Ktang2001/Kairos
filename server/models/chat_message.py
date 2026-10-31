@@ -30,3 +30,10 @@ class ChatMessage(Base):
     attachments: Mapped[list["Attachment"]] = relationship(  # noqa: F821
         back_populates="chat_message"
     )
+    #: Set when this message announces a meeting (server/models/meeting.py).
+    meeting: Mapped["Meeting | None"] = relationship(back_populates="chat_message")  # noqa: F821
+
+    @property
+    def meeting_id(self) -> int | None:
+        """The meeting this message announces, if any (read by ChatMessageOut)."""
+        return self.meeting.id if self.meeting is not None else None
