@@ -24,6 +24,8 @@ from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
 from PySide6.QtWidgets import QToolTip, QWidget
 
+from client.views.time_text import parse_day, show_due
+
 LABEL_WIDTH = 220
 HEADER_HEIGHT = 44
 ROW_HEIGHT = 28
@@ -56,13 +58,6 @@ def _shift(day: date, days: int) -> date:
         return day + timedelta(days=days)
     except OverflowError:
         return date.max if days > 0 else date.min
-
-
-def parse_day(value: str | date | None) -> date | None:
-    """An API date ("2026-11-02") as a ``date``; None stays None."""
-    if value is None or isinstance(value, date):
-        return value
-    return date.fromisoformat(value)
 
 
 class GanttChart(QWidget):
@@ -351,9 +346,12 @@ class GanttChart(QWidget):
         when = start.strftime("%b %d") if start == end else f"{start:%b %d} - {end:%b %d}"
         if row["estimated"]:
             when += " (only one date set)"
-        lines = [
-            row["title"],
-            when,
+        lines = [row["title"], when]
+        # The bar is drawn by whole days; the exact deadline, in this
+        # computer's zone, is in the hover text. (``get``: older servers.)
+        if row.get("due_at"):
+            lines.append(f"Due {show_due(row)}")
+        lines += [
             f"{STATUS_LABELS.get(row['status'], row['status'])}, {row['progress']}% done",
             f"Assigned to {row['assignee']['name']}" if row["assignee"] else "Unassigned",
         ]

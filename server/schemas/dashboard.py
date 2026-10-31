@@ -1,6 +1,6 @@
 """Response shape of GET /dashboard (context.md goal #7)."""
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -19,6 +19,8 @@ class TaskBrief(BaseModel):
     project_name: str
     status: TaskStatus
     due_date: date | None
+    #: The exact deadline, in UTC.
+    due_at: datetime | None = None
 
 
 class SubtaskBrief(BaseModel):
@@ -33,6 +35,8 @@ class SubtaskBrief(BaseModel):
     project_name: str
     status: TaskStatus
     due_date: date | None
+    #: The exact deadline, in UTC.
+    due_at: datetime | None = None
 
 
 class Overview(BaseModel):

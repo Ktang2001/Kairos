@@ -6,7 +6,7 @@ the session token. Two styles of method live here, one from each branch:
 
 * Kaleb's (chat, people, conversations, attachments, server settings) call
   ``self._http`` directly and raise ``httpx`` errors, which those screens catch.
-* Nick2's (teams, users, ``me``, projects, tasks, Gantt, dashboard) go
+* Nick2's (teams, users, ``me``, projects, tasks, Gantt, dashboard, meetings) go
   through ``_request``, which turns every failure into an ``ApiError`` with a
   message fit to show -- the form the Teams, Users, Projects and Dashboard
   pages expect.
@@ -18,6 +18,7 @@ pinned connection.
 import mimetypes
 import os
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -172,6 +173,7 @@ class ApiClient:
         display_name: str | None = None,
         upload_root: str | None = None,
         max_upload_size_bytes: int | None = None,
+        jitsi_base_url: str | None = None,
     ) -> dict:
         """Requires the caller to hold the global admin role server-side (see
         server/api/dependencies.py::require_global_admin) - a non-admin gets a 403.
@@ -183,6 +185,7 @@ class ApiClient:
                 "display_name": display_name,
                 "upload_root": upload_root,
                 "max_upload_size_bytes": max_upload_size_bytes,
+                "jitsi_base_url": jitsi_base_url,
             },
             headers=self._auth_headers(),
         )
@@ -334,13 +337,19 @@ class ApiClient:
 
     # ------------------------------------------- teams and users (Nick2 style)
 
-    def _request(self, method: str, path: str, *, json: dict | None = None):
+    def _request(
+        self, method: str, path: str, *, json: dict | None = None, params: dict | None = None
+    ):
         """Send one signed-in request and return the decoded JSON reply (None if
         empty). Every failure is raised as ``ApiError`` with a readable message.
         """
         try:
             response = self._http.request(
-                method, f"{self.base_url}{path}", json=json, headers=self._auth_headers()
+                method,
+                f"{self.base_url}{path}",
+                json=json,
+                params=params,
+                headers=self._auth_headers(),
             )
         except httpx.TimeoutException:
             raise ApiError(_timeout_message(self.base_url)) from None
@@ -459,8 +468,47 @@ class ApiClient:
 
     def get_gantt(self, project_id: int) -> dict:
         """Everything the project's Gantt chart draws (see server/schemas/gantt.py)."""
-        return self._request("GET", f"/projects/{project_id}/gantt")
+        # This computer's date: where the today line goes, whatever the host's is.
+        return self._request(
+            "GET", f"/projects/{project_id}/gantt", params={"today": date.today().isoformat()}
+        )
 
     def get_dashboard(self) -> dict:
-        """Statistics across your teams (see server/schemas/dashboard.py)."""
-        return self._request("GET", "/dashboard")
+        """Statistics across your teams (see server/schemas/dashboard.py), with
+        "due soon" counted from this computer's date."""
+        return self._request("GET", "/dashboard", params={"today": date.today().isoformat()})
+
+    # ----------------------------------------------------------- meetings
+
+    def create_chat_meeting(self, conversation_id: int, **fields) -> dict:
+        """Start (no ``starts_at``) or schedule a meeting in a chat; you host it."""
+        return self._request("POST", f"/conversations/{conversation_id}/meetings", json=fields)
+
+    def create_team_meeting(self, team_id: int, **fields) -> dict:
+        """Start or schedule a meeting for a team, in its team chat; you host it."""
+        return self._request("POST", f"/teams/{team_id}/meetings", json=fields)
+
+    def list_chat_meetings(self, conversation_id: int) -> list[dict]:
+        """Every meeting in a chat you're in, oldest first."""
+        return self._request("GET", f"/conversations/{conversation_id}/meetings")
+
+    def list_upcoming_meetings(self) -> list[dict]:
+        """Meetings you can see that aren't cancelled or over, soonest first."""
+        return self._request("GET", "/meetings/upcoming")
+
+    def respond_to_meeting(self, meeting_id: int, response: str) -> dict:
+        """Accept, tentatively accept or decline (see shared/meetings.py)."""
+        return self._request("PUT", f"/meetings/{meeting_id}/response", json={"response": response})
+
+    def update_meeting(self, meeting_id: int, **changes) -> dict:
+        """Change a meeting's title, starts_at, duration_minutes or reminder_minutes
+        (host or admin only)."""
+        return self._request("PATCH", f"/meetings/{meeting_id}", json=changes)
+
+    def cancel_meeting(self, meeting_id: int) -> dict:
+        """Cancel a meeting you host (admins: any team meeting)."""
+        return self._request("POST", f"/meetings/{meeting_id}/cancel")
+
+    def meeting_join_link(self, meeting_id: int) -> str:
+        """The Jitsi link to open; refused if the meeting is cancelled or over."""
+        return self._request("GET", f"/meetings/{meeting_id}/join")["url"]

@@ -1,4 +1,9 @@
+import pytest
+from PySide6.QtCore import Qt
+
+from client.views import chat_thread_panel
 from client.views.chat_thread_panel import ChatThreadPanel
+from tests.client.meeting_data import make_meeting
 
 
 class _FakeApiClient:
@@ -116,3 +121,145 @@ def test_manage_members_button_hidden_for_a_team_chat(qtbot) -> None:
     panel.show_conversation(3, title="Alpha")
 
     assert not panel.manage_members_button.isVisible()
+
+
+# ------------------------------------------------------------------ meetings
+
+
+class _MeetingApi(_FakeApiClient):
+    """A chat (id 3) whose one message announces meeting 7."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._messages_by_conversation[3] = [
+            {
+                "id": 1,
+                "sender_user_id": 2,
+                "body": "Scheduled a meeting: Stand-up",
+                "attachments": [],
+                "meeting_id": 7,
+            }
+        ]
+        self.meetings = [make_meeting(id=7, conversation_id=3)]
+        self.meeting_requests = 0
+
+    def list_chat_meetings(self, conversation_id: int) -> list[dict]:
+        self.meeting_requests += 1
+        return [m for m in self.meetings if m["conversation_id"] == conversation_id]
+
+
+def test_a_meeting_announcement_becomes_its_card(qtbot) -> None:
+    api = _MeetingApi()
+    panel = ChatThreadPanel(api)
+    qtbot.addWidget(panel)
+
+    panel.show_conversation(3, title="Alpha")
+    # Until the meeting's details arrive the row shows the announcement.
+    assert "Scheduled a meeting: Stand-up" in panel.message_list.item(0).text()
+    qtbot.waitUntil(lambda: 7 in panel._meeting_cards, timeout=5000)
+
+    item = panel.message_list.item(0)
+    card = panel._meeting_cards[7]
+    assert panel.message_list.itemWidget(item) is card
+    assert item.text() == ""
+    assert "Stand-up" in item.data(Qt.ItemDataRole.AccessibleTextRole)
+
+
+def test_each_poll_brings_the_cards_up_to_date(qtbot) -> None:
+    api = _MeetingApi()
+    panel = ChatThreadPanel(api)
+    qtbot.addWidget(panel)
+    panel.show_conversation(3, title="Alpha")
+    qtbot.waitUntil(lambda: 7 in panel._meeting_cards, timeout=5000)
+
+    api.meetings = [make_meeting(id=7, conversation_id=3, state="cancelled")]
+    panel._refresh()
+
+    qtbot.waitUntil(
+        lambda: panel._meeting_cards[7].status_label.full_text == "Cancelled", timeout=5000
+    )
+
+
+def test_a_chat_without_meetings_never_asks_for_them(qtbot) -> None:
+    api = _MeetingApi()
+    panel = ChatThreadPanel(api)
+    qtbot.addWidget(panel)
+
+    panel.show_conversation(1, title="Direct")
+    panel._refresh()
+
+    assert api.meeting_requests == 0
+
+
+def test_cards_for_a_chat_you_left_are_ignored(qtbot) -> None:
+    api = _MeetingApi()
+    panel = ChatThreadPanel(api)
+    qtbot.addWidget(panel)
+    panel.show_conversation(3, title="Alpha")
+    panel.show_conversation(1, title="Direct")
+
+    panel._show_meetings(3, api.meetings)
+
+    assert panel._meeting_cards == {}
+
+
+class _AcceptedDialog:
+    """Stands in for NewMeetingDialog: the user filled it in and pressed OK."""
+
+    class DialogCode:
+        Accepted = 1
+
+    def __init__(self, *_args, **_kwargs) -> None:
+        self.result_title = "Quick call"
+        self.result_starts_at = None
+        self.result_duration_minutes = 30
+        self.result_client_token = "tok"
+        self.result_reminder_minutes = []
+
+    def exec(self) -> int:
+        return 1
+
+
+def test_the_meet_button_starts_a_meeting_in_this_chat(
+    qtbot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    panel = ChatThreadPanel(_MeetingApi())
+    qtbot.addWidget(panel)
+    panel.show_conversation(3, title="Alpha")
+    requests = []
+    monkeypatch.setattr(chat_thread_panel, "NewMeetingDialog", _AcceptedDialog)
+    monkeypatch.setattr(
+        panel.meetings, "create_in_chat", lambda cid, **fields: requests.append((cid, fields))
+    )
+
+    panel.meet_button.click()
+
+    assert requests == [
+        (
+            3,
+            {
+                "title": "Quick call",
+                "starts_at": None,
+                "duration_minutes": 30,
+                "client_token": "tok",
+                "reminder_minutes": [],
+            },
+        )
+    ]
+
+
+def test_cancelling_from_a_card_asks_first(qtbot, monkeypatch: pytest.MonkeyPatch) -> None:
+    panel = ChatThreadPanel(_MeetingApi())
+    qtbot.addWidget(panel)
+    panel.show_conversation(3, title="Alpha")
+    qtbot.waitUntil(lambda: 7 in panel._meeting_cards, timeout=5000)
+    cancelled = []
+    monkeypatch.setattr(panel.meetings, "cancel", cancelled.append)
+
+    panel.confirm = lambda _title, _question: False
+    panel._confirm_cancel(7)
+    assert cancelled == []
+
+    panel.confirm = lambda _title, question: "Stand-up" in question
+    panel._confirm_cancel(7)
+    assert cancelled == [7]

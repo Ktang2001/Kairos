@@ -280,3 +280,18 @@ def test_an_old_database_is_reported_and_the_server_not_started(
     assert "needs upgrading" in server_window.status_label.text()
     assert server_window._uvicorn_server is None
     assert server_window.toggle_button.text() == "Start Server"
+
+
+def test_the_host_can_change_the_meeting_server(
+    qtbot: QtBot, server_window: gui.ServerWindow
+) -> None:
+    assert server_window.jitsi_input.text() == "https://meet.jit.si"
+
+    server_window.jitsi_input.setText("https://jitsi.example.org/meet/")
+    server_window._on_save_settings_clicked()
+    assert server_window.settings_status_label.text() == "Settings saved."
+    assert server_window.jitsi_input.text() == "https://jitsi.example.org/meet"
+
+    server_window.jitsi_input.setText("http://insecure.example.org")
+    server_window._on_save_settings_clicked()
+    assert "https://" in server_window.settings_status_label.text()

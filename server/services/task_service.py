@@ -43,12 +43,44 @@ from server.models.task import Task
 from server.models.team import Team
 from server.models.user import User
 from server.services import project_service, team_service
+from shared.date_rules import DEFAULT_DUE_TIME
 from shared.statuses import ProjectStatus, TaskStatus
 
 
 def utcnow() -> datetime:
     """The current time as naive UTC, the form ``Task.completed_at`` stores."""
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def due_moment(due_at: datetime | None, due_date: date | None) -> datetime | None:
+    """The exact deadline to store (naive UTC), from what the client sent.
+
+    ``due_at`` (time-zone aware) when given. A client that sent only a date
+    -- an older one, or a script -- gets 11:59 PM that day in the host
+    computer's time zone, the best guess at whose day it is.
+    """
+    if due_at is not None:
+        return due_at.astimezone(UTC).replace(tzinfo=None)
+    if due_date is None:
+        return None
+    local_end_of_day = datetime.combine(due_date, DEFAULT_DUE_TIME).astimezone()
+    return local_end_of_day.astimezone(UTC).replace(tzinfo=None)
+
+
+def _set_due_moment(item: Task | Subtask, changes: dict[str, Any]) -> None:
+    """Turn a PATCH's ``due_at`` / ``due_date`` into the stored pair.
+
+    The schema has already made ``due_date`` the date of ``due_at`` when that
+    was sent; a lone ``due_date`` gets its default time here -- unless it is
+    the date already stored, which an older client (one that knows nothing
+    of times) sends back with every save: then the time someone picked stays.
+    """
+    if "due_at" in changes:
+        changes["due_at"] = due_moment(changes["due_at"], changes.get("due_date"))
+    elif "due_date" in changes:
+        if changes["due_date"] == item.due_date and item.due_at is not None:
+            return
+        changes["due_at"] = due_moment(None, changes["due_date"])
 
 
 class TaskNotFound(Exception):
@@ -195,8 +227,13 @@ def create_task(
     start_date: date | None,
     due_date: date | None,
     status: TaskStatus,
+    due_at: datetime | None = None,
 ) -> Task:
-    """Create a task in a project the actor can see. The assignee must be on the team."""
+    """Create a task in a project the actor can see. The assignee must be on the team.
+
+    ``due_at`` is the exact deadline (aware); ``due_date`` is its date in the
+    sender's zone, or the only thing sent (see ``due_moment``).
+    """
     project, team = project_service.get_visible_project(db, project_id, actor)
     _require_open(project)
     _check_assignee(team, assignee_id)
@@ -208,6 +245,7 @@ def create_task(
         assignee_id=assignee_id,
         start_date=start_date,
         due_date=due_date,
+        due_at=due_moment(due_at, due_date),
         status=TaskStatus.TODO,
     )
     _apply_status(task, status)
@@ -229,7 +267,7 @@ def list_tasks(
     stmt = (
         _task_query()
         .where(Task.project_id == project.id)
-        .order_by(Task.due_date.is_(None), Task.due_date, Task.id)
+        .order_by(Task.due_date.is_(None), Task.due_date, Task.due_at, Task.id)
     )
     if status is not None:
         stmt = stmt.where(Task.status == status)
@@ -247,6 +285,7 @@ def update_task(db: OrmSession, task_id: int, actor: User, changes: dict[str, An
     if "assignee_id" in changes:
         _check_assignee(team, changes["assignee_id"])
     _check_dates(task, changes)
+    _set_due_moment(task, changes)
 
     for field, value in changes.items():
         if field == "status":
@@ -353,8 +392,12 @@ def create_subtask(
     start_date: date | None,
     due_date: date | None,
     status: TaskStatus,
+    due_at: datetime | None = None,
 ) -> Task:
-    """Add a subtask. Returns the parent task, so the client sees the new progress."""
+    """Add a subtask. Returns the parent task, so the client sees the new progress.
+
+    ``due_at`` / ``due_date`` work as in ``create_task``.
+    """
     task, team = get_visible_task(db, task_id, actor)
     _require_open(task.project)
     _check_assignee(team, assignee_id)
@@ -366,6 +409,7 @@ def create_subtask(
             assignee_id=assignee_id,
             start_date=start_date,
             due_date=due_date,
+            due_at=due_moment(due_at, due_date),
             status=status,
         )
     )
@@ -382,6 +426,7 @@ def update_subtask(db: OrmSession, subtask_id: int, actor: User, changes: dict[s
     if "assignee_id" in changes:
         _check_assignee(team, changes["assignee_id"])
     _check_dates(subtask, changes)
+    _set_due_moment(subtask, changes)
 
     for field, value in changes.items():
         setattr(subtask, field, value)

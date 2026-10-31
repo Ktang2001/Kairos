@@ -563,3 +563,13 @@ def test_the_name_index_exists_in_the_model_schema(
     finally:
         db.close()
     assert "uq_teams_name_lower" in names
+
+
+def test_the_team_list_says_whether_you_are_on_each_team(
+    client: TestClient, team: dict, member: Account, admin: Account
+) -> None:
+    [as_member] = client.get("/teams", headers=member.headers).json()
+    [as_admin] = client.get("/teams", headers=admin.headers).json()
+
+    assert as_member["is_member"] is True
+    assert as_admin["is_member"] is False

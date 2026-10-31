@@ -11,6 +11,7 @@ one module to rewrite.
 """
 
 from datetime import UTC, date, datetime, timedelta
+from typing import NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -30,7 +31,7 @@ from server.schemas.dashboard import (
     TaskBrief,
     Workload,
 )
-from server.schemas.meeting import to_meeting_out
+from server.schemas.meeting import as_utc, to_meeting_out
 from server.schemas.project import count_statuses
 from server.schemas.user import to_user_out
 from server.services import meeting_service, team_service
@@ -56,23 +57,69 @@ def local_today() -> date:
     return datetime.now(UTC).astimezone().date()
 
 
+class TodayOutOfRange(Exception):
+    """A client's "today" is more than a day from the server's UTC date: no
+    time zone is that far off, so that computer's clock is wrong."""
+
+
+def viewer_today(requested: date | None, now: datetime | None = None) -> date:
+    """The day "due soon" and the Gantt chart's today line are measured from:
+    the viewer's own date, when their client sends it.
+
+    Teammates can be in different time zones, and near midnight their dates
+    differ; each should see the days counted from their own calendar, not the
+    host computer's. Time zones run from UTC-12 to UTC+14, so a real local
+    date is the UTC date or the day either side of it; anything further means
+    a wrong clock and is refused. A client that sends no date (older
+    versions) gets the host computer's date. ``now`` is naive UTC.
+    """
+    if requested is None:
+        return local_today()
+    utc_date = (now or datetime.now(UTC).replace(tzinfo=None)).date()
+    if abs((requested - utc_date).days) > 1:
+        raise TodayOutOfRange(requested)
+    return requested
+
+
+class Clock(NamedTuple):
+    """When the dashboard is measured: the host's local ``today`` (deadlines'
+    calendar days) and ``now`` (naive UTC, deadlines' exact moments)."""
+
+    today: date
+    now: datetime
+
+
 def _is_open(task: Task | Subtask) -> bool:
     return task.status != TaskStatus.DONE
 
 
-def _is_overdue(task: Task | Subtask, today: date) -> bool:
-    """Open and due *before* today. Due today is not overdue yet; no due date
-    never is.
+def _is_overdue(task: Task | Subtask, clock: Clock) -> bool:
+    """Open and past its exact deadline (``due_at``), whatever time zone anyone
+    is in. A row from before deadlines had times falls back to its date: due
+    *before* today. No deadline is never overdue.
     """
-    return _is_open(task) and task.due_date is not None and task.due_date < today
+    if not _is_open(task):
+        return False
+    if task.due_at is not None:
+        return task.due_at < clock.now
+    return task.due_date is not None and task.due_date < clock.today
 
 
-def _is_due_soon(task: Task | Subtask, today: date) -> bool:
+def _is_due_soon(task: Task | Subtask, clock: Clock) -> bool:
+    """Open, not overdue yet, and due on one of the next ``DUE_SOON_DAYS`` days
+    (today included). Counted in calendar days: "due soon" is a rough window,
+    "overdue" is the exact moment."""
     return (
         _is_open(task)
+        and not _is_overdue(task, clock)
         and task.due_date is not None
-        and today <= task.due_date <= today + timedelta(days=DUE_SOON_DAYS)
+        and clock.today <= task.due_date <= clock.today + timedelta(days=DUE_SOON_DAYS)
     )
+
+
+def _deadline_order(item: Task | Subtask) -> tuple:
+    """Soonest deadline first: by day, then exact time, then id."""
+    return (item.due_date, item.due_at or datetime.max, item.id)
 
 
 def _percent(done: int, total: int) -> float:
@@ -100,6 +147,7 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
         )
     )
     tasks = [task for project in projects for task in project.tasks]
+    clock = Clock(today=today, now=now)
     open_tasks = [task for task in tasks if _is_open(task)]
     open_subtasks = [s for task in tasks for s in task.subtasks if _is_open(s)]
     recent_cutoff = now - timedelta(days=RECENT_DAYS)
@@ -110,8 +158,8 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
         active_projects=sum(1 for p in projects if p.status == ProjectStatus.ACTIVE),
         completed_projects=sum(1 for p in projects if p.status == ProjectStatus.COMPLETED),
         tasks=count_statuses(tasks),
-        overdue=sum(1 for t in tasks if _is_overdue(t, today)),
-        due_soon=sum(1 for t in tasks if _is_due_soon(t, today)),
+        overdue=sum(1 for t in tasks if _is_overdue(t, clock)),
+        due_soon=sum(1 for t in tasks if _is_due_soon(t, clock)),
         unassigned_open=sum(1 for t in open_tasks if t.assignee_id is None),
         completed_recently=sum(
             1 for t in tasks if t.completed_at is not None and t.completed_at >= recent_cutoff
@@ -121,12 +169,12 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
 
     project_names = {project.id: project.name for project in projects}
     mine = [t for t in open_tasks if t.assignee_id == viewer.id]
-    upcoming = sorted((t for t in mine if t.due_date is not None), key=lambda t: (t.due_date, t.id))
+    upcoming = sorted((t for t in mine if t.due_date is not None), key=_deadline_order)
     my_work = MyWork(
         open=len(mine),
         in_progress=sum(1 for t in mine if t.status == TaskStatus.IN_PROGRESS),
-        overdue=sum(1 for t in mine if _is_overdue(t, today)),
-        due_soon=sum(1 for t in mine if _is_due_soon(t, today)),
+        overdue=sum(1 for t in mine if _is_overdue(t, clock)),
+        due_soon=sum(1 for t in mine if _is_due_soon(t, clock)),
         upcoming=[
             TaskBrief(
                 id=t.id,
@@ -135,10 +183,11 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
                 project_name=project_names[t.project_id],
                 status=TaskStatus(t.status),
                 due_date=t.due_date,
+                due_at=as_utc(t.due_at),
             )
             for t in upcoming[:UPCOMING_LIMIT]
         ],
-        **_my_subtasks(open_subtasks, viewer, project_names, today),
+        **_my_subtasks(open_subtasks, viewer, project_names, clock),
     )
 
     project_stats = []
@@ -153,7 +202,7 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
                 status=ProjectStatus(project.status),
                 tasks=counts,
                 percent_complete=_percent(counts.done, counts.total),
-                overdue=sum(1 for t in project.tasks if _is_overdue(t, today)),
+                overdue=sum(1 for t in project.tasks if _is_overdue(t, clock)),
             )
         )
     project_stats.sort(
@@ -167,7 +216,7 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
         overview=overview,
         my_work=my_work,
         projects=project_stats,
-        workload=_workload(teams, open_tasks, open_subtasks, today),
+        workload=_workload(teams, open_tasks, open_subtasks, clock),
         meetings=[
             to_meeting_out(
                 meeting, viewer, now=now, can_cancel=meeting_service.can_cancel(meeting, viewer)
@@ -178,15 +227,15 @@ def build_dashboard(db: OrmSession, viewer: User, *, today: date, now: datetime)
 
 
 def _my_subtasks(
-    open_subtasks: list[Subtask], viewer: User, project_names: dict[int, str], today: date
+    open_subtasks: list[Subtask], viewer: User, project_names: dict[int, str], clock: Clock
 ) -> dict:
     """The ``MyWork`` fields about the open subtasks assigned to ``viewer``."""
     mine = [s for s in open_subtasks if s.assignee_id == viewer.id]
-    dated = sorted((s for s in mine if s.due_date is not None), key=lambda s: (s.due_date, s.id))
+    dated = sorted((s for s in mine if s.due_date is not None), key=_deadline_order)
     return {
         "subtasks_open": len(mine),
-        "subtasks_overdue": sum(1 for s in mine if _is_overdue(s, today)),
-        "subtasks_due_soon": sum(1 for s in mine if _is_due_soon(s, today)),
+        "subtasks_overdue": sum(1 for s in mine if _is_overdue(s, clock)),
+        "subtasks_due_soon": sum(1 for s in mine if _is_due_soon(s, clock)),
         "upcoming_subtasks": [
             SubtaskBrief(
                 id=s.id,
@@ -197,6 +246,7 @@ def _my_subtasks(
                 project_name=project_names[s.task.project_id],
                 status=TaskStatus(s.status),
                 due_date=s.due_date,
+                due_at=as_utc(s.due_at),
             )
             for s in dated[:UPCOMING_LIMIT]
         ],
@@ -204,7 +254,7 @@ def _my_subtasks(
 
 
 def _workload(
-    teams: list[Team], open_tasks: list[Task], open_subtasks: list[Subtask], today: date
+    teams: list[Team], open_tasks: list[Task], open_subtasks: list[Subtask], clock: Clock
 ) -> list[Workload]:
     """Open and overdue task counts, and open subtask counts, for every member of
     the visible teams.
@@ -225,7 +275,7 @@ def _workload(
             Workload(
                 user=to_user_out(user),
                 open=len(theirs),
-                overdue=sum(1 for t in theirs if _is_overdue(t, today)),
+                overdue=sum(1 for t in theirs if _is_overdue(t, clock)),
                 open_subtasks=sum(1 for s in open_subtasks if s.assignee_id == user_id),
             )
         )

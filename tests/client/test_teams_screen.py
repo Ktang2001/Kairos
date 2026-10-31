@@ -25,7 +25,7 @@ from shared.roles import ROLE_ADMIN, ROLE_MEMBER, ROLE_PROJECT_LEAD
 from tests.client.conftest import SETUP_TIMEOUT, TEST_PASSWORD, set_live_role, unique_email
 
 WAIT_MS = 8000
-TEAMS_ROW = 2  # Dashboard, Chat, Teams, Projects, [Users, Server Settings]
+TEAMS_ROW = 2  # Dashboard, Chat, Teams, Projects, Profile, [Users, Server Settings]
 
 
 @dataclass
@@ -189,7 +189,7 @@ def test_the_app_has_a_teams_page_next_to_dashboard_and_chat(
     qtbot: QtBot, live_server: str
 ) -> None:
     view = _open(qtbot, _person(live_server, "Max"))
-    assert view.nav_items == ["Dashboard", "Chat", "Teams", "Projects"]
+    assert view.nav_items == ["Dashboard", "Chat", "Teams", "Projects", "Profile"]
     assert view.shell.pages.currentWidget() is view.teams_view
 
 

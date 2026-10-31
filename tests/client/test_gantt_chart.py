@@ -246,3 +246,18 @@ def test_extreme_dates_never_crash_the_chart(chart: GanttChart, start: str, end:
     chart.resize(2000, 300)
     assert not chart.grab().isNull()
     chart.describe(0)
+
+
+def test_hover_text_gives_the_exact_deadline_in_this_computers_zone(chart: GanttChart) -> None:
+    from client.views.time_text import show_due
+
+    due_at = "2026-11-05T05:59:00Z"
+    chart.set_chart(_chart([_row(1, "Launch", "2026-11-02", "2026-11-04", due_at=due_at)]))
+
+    assert f"Due {show_due({'due_at': due_at})}" in chart.describe(0).splitlines()
+
+
+def test_hover_text_from_an_older_server_has_no_due_line(chart: GanttChart) -> None:
+    chart.set_chart(_chart([_row(1, "Launch", "2026-11-02", "2026-11-04")]))
+
+    assert not any(line.startswith("Due ") for line in chart.describe(0).splitlines())

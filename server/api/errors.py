@@ -14,6 +14,7 @@ Usage in a route:
 from fastapi import HTTPException, status
 
 from server.services import (
+    dashboard_service,
     meeting_service,
     project_service,
     task_service,
@@ -97,7 +98,7 @@ ERRORS: dict[type[Exception], tuple[int, str]] = {
     ),
     meeting_service.NotMeetingHost: (
         status.HTTP_403_FORBIDDEN,
-        "Only the meeting's host or an admin can cancel it",
+        "Only the meeting's host or an admin can change or cancel it",
     ),
     meeting_service.HostCannotRespond: (
         status.HTTP_409_CONFLICT,
@@ -116,6 +117,11 @@ ERRORS: dict[type[Exception], tuple[int, str]] = {
     meeting_service.ClientTokenReused: (
         status.HTTP_409_CONFLICT,
         "That request id was already used for something else - try again",
+    ),
+    # Dashboard and Gantt chart
+    dashboard_service.TodayOutOfRange: (
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "This computer's date is more than a day off the server's - check its clock",
     ),
     # Users (admin)
     user_service.UserNotFound: (status.HTTP_404_NOT_FOUND, "User not found"),

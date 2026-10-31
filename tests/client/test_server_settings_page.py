@@ -20,7 +20,13 @@ class _FakeApiClient:
     def get_server_info(self) -> dict:
         return {"display_name": "Kairos Server", "max_upload_size_bytes": 50 * 1024 * 1024}
 
-    def update_server_info(self, display_name=None, upload_root=None, max_upload_size_bytes=None):
+    def update_server_info(
+        self,
+        display_name=None,
+        upload_root=None,
+        max_upload_size_bytes=None,
+        jitsi_base_url=None,
+    ):
         if self.forbidden:
             raise httpx.HTTPStatusError("forbidden", request=None, response=_Resp(403, {}))
         self.updates.append(

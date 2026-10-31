@@ -21,6 +21,8 @@ def _no_dashboard_request(monkeypatch) -> None:
         raise ApiError("offline in this test")
 
     monkeypatch.setattr(ApiClient, "get_dashboard", offline)
+    # The app window also polls for upcoming meetings (reminders): none here.
+    monkeypatch.setattr(ApiClient, "list_upcoming_meetings", lambda self: [])
 
 
 def _isolated_viewmodel(tmp_path) -> ServerListViewModel:

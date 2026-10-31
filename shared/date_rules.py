@@ -11,13 +11,18 @@ Used by the server's request checks and the client's date pickers, so both
 agree (shared/ is imported by each).
 """
 
-from datetime import date
+from datetime import date, time
 
 EARLIEST_TASK_DATE = date(1900, 1, 1)
 LATEST_TASK_DATE = date(2199, 12, 31)
 
 #: The message both sides show for a date outside the range.
 DATE_RANGE_MESSAGE = f"Dates must be between {EARLIEST_TASK_DATE.year} and {LATEST_TASK_DATE.year}."
+
+
+#: The time of day a deadline is due when only its date is given: the end of
+#: that day, in the time zone of whoever sets it.
+DEFAULT_DUE_TIME = time(23, 59)
 
 
 def date_in_range(value: date | None) -> bool:

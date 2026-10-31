@@ -145,6 +145,10 @@ class ServerWindow(QMainWindow):
 
         self.name_input = QLineEdit()
         self.upload_root_input = QLineEdit()
+        #: Where meetings are held. Changing it only affects meetings made
+        #: afterwards; each meeting keeps the address it was made with.
+        self.jitsi_input = QLineEdit()
+        self.jitsi_input.setPlaceholderText("https://meet.jit.si")
         browse_button = QPushButton("Browse...")
         browse_button.clicked.connect(self._on_browse_upload_root)
         self.save_settings_button = QPushButton("Save Settings")
@@ -158,6 +162,7 @@ class ServerWindow(QMainWindow):
         form = QFormLayout()
         form.addRow("Display name:", self.name_input)
         form.addRow("Upload folder:", upload_root_row)
+        form.addRow("Meeting server (Jitsi):", self.jitsi_input)
 
         layout = QVBoxLayout()
         layout.addLayout(form)
@@ -173,6 +178,7 @@ class ServerWindow(QMainWindow):
             settings = server_settings_service.get_settings(db)
             self.name_input.setText(settings.display_name)
             self.upload_root_input.setText(settings.upload_root)
+            self.jitsi_input.setText(settings.jitsi_base_url)
         finally:
             db.close()
 
@@ -194,13 +200,15 @@ class ServerWindow(QMainWindow):
             self.upload_root_input.setText(chosen)
 
     def _on_save_settings_clicked(self) -> None:
-        """Save the display name and upload folder."""
+        """Save the display name, upload folder and meeting server."""
         db = SessionLocal()
         try:
             server_settings_service.update_settings(
                 db,
                 display_name=self.name_input.text().strip(),
                 upload_root=self.upload_root_input.text().strip(),
+                # Blank keeps the current one rather than being refused.
+                jitsi_base_url=self.jitsi_input.text().strip() or None,
             )
         except ValueError as exc:
             self.settings_status_label.setText(f"Could not save: {exc}")
@@ -208,6 +216,7 @@ class ServerWindow(QMainWindow):
         finally:
             db.close()
         self.settings_status_label.setText("Settings saved.")
+        self._load_settings()  # shows the meeting server as stored (no trailing "/")
 
     def _on_toggle_clicked(self) -> None:
         """The one button: starts the server if it is stopped, else stops it."""

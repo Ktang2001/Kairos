@@ -7,13 +7,28 @@ its dates. Fields a task cannot be without (title, status) refuse null.
 ``start_date`` must not be after ``due_date``. The create bodies check it here;
 on a PATCH only one of the two may be sent, so ``task_service`` checks it
 against the stored other end.
+
+A deadline has an exact time: ``due_at``, with its time-zone offset (e.g.
+"2026-11-04T23:59:00-06:00"). ``due_date`` is then the date part as the
+sender wrote it -- the day in *their* time zone. A client may still send only
+``due_date``; the server then makes it due at 11:59 PM that day in the host
+computer's time zone. Responses carry both, ``due_at`` in UTC.
 """
 
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 
+from server.schemas.meeting import as_utc
 from server.schemas.user import UserOut, to_user_out
 from shared.date_rules import DATE_RANGE_MESSAGE, date_in_range
 from shared.statuses import TaskStatus
@@ -61,15 +76,24 @@ class _NoNullRequiredFields(BaseModel):
 
 
 class _DatesInOrder(BaseModel):
-    """Rejects a body whose ``start_date`` is after its ``due_date``."""
+    """Rejects a body whose ``start_date`` is after its ``due_date``, and fills
+    ``due_date`` in from ``due_at``."""
 
     start_date: date | None = None
     due_date: date | None = None
+    #: The exact deadline, with the sender's offset. Null clears the deadline.
+    due_at: AwareDatetime | None = None
 
     @model_validator(mode="after")
     def start_is_not_after_due(self) -> "_DatesInOrder":
-        """Both dates in the allowed range (shared/date_rules.py), and a bar cannot end
-        before it starts."""
+        """``due_date`` is the date of ``due_at`` (in the sender's zone); both dates
+        in the allowed range (shared/date_rules.py); and a bar cannot end before
+        it starts."""
+        if "due_at" in self.model_fields_set:
+            day = self.due_at.date() if self.due_at is not None else None
+            if "due_date" in self.model_fields_set and self.due_date != day:
+                raise ValueError("due_date must be the date part of due_at")
+            self.due_date = day  # also marks due_date as sent, for a PATCH
         if not (date_in_range(self.start_date) and date_in_range(self.due_date)):
             raise ValueError(DATE_RANGE_MESSAGE)
         if self.start_date and self.due_date and self.start_date > self.due_date:
@@ -145,6 +169,8 @@ class SubtaskOut(BaseModel):
     assignee: UserOut | None
     start_date: date | None
     due_date: date | None
+    #: The exact deadline, in UTC.
+    due_at: datetime | None
     version: int
 
 
@@ -161,6 +187,8 @@ class TaskOut(BaseModel):
     assignee: UserOut | None
     start_date: date | None
     due_date: date | None
+    #: The exact deadline, in UTC.
+    due_at: datetime | None
     created_at: datetime
     completed_at: datetime | None
     subtasks_done: int
@@ -188,6 +216,7 @@ def to_subtask_out(subtask: "Subtask") -> SubtaskOut:
         assignee=to_user_out(subtask.assignee) if subtask.assignee else None,
         start_date=subtask.start_date,
         due_date=subtask.due_date,
+        due_at=as_utc(subtask.due_at),
         version=subtask.version,
     )
 
@@ -203,6 +232,7 @@ def _task_fields(task: "Task") -> dict:
         "assignee": to_user_out(task.assignee) if task.assignee else None,
         "start_date": task.start_date,
         "due_date": task.due_date,
+        "due_at": as_utc(task.due_at),
         "created_at": task.created_at,
         "completed_at": task.completed_at,
         "subtasks_done": sum(1 for s in task.subtasks if s.status == TaskStatus.DONE),

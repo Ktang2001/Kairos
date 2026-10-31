@@ -646,6 +646,167 @@ def test_only_an_admin_changes_the_jitsi_address(client: TestClient, member: Acc
     assert response.status_code == 403, response.text
 
 
+# ---------------------------------------------------------------------- edit
+
+
+def _edit(client: TestClient, account: Account, meeting_id: int, **fields):
+    return client.patch(f"/meetings/{meeting_id}", json=fields, headers=account.headers)
+
+
+def test_the_host_renames_and_changes_reminders_quietly(
+    client: TestClient, lead: Account, member: Account, meeting: dict
+) -> None:
+    client.put(
+        f"/meetings/{meeting['id']}/response", json={"response": "accepted"}, headers=lead.headers
+    )
+
+    response = _edit(client, member, meeting["id"], title="Daily sync", reminder_minutes=[60, 0])
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["title"] == "Daily sync"
+    assert body["reminder_minutes"] == [0, 60]
+    assert body["counts"]["accepted"] == 1  # replies kept: same time
+    messages = client.get(
+        f"/conversations/{meeting['conversation_id']}/messages", headers=lead.headers
+    ).json()
+    assert not any("Moved" in (m["body"] or "") for m in messages)
+
+
+def test_moving_a_meeting_tells_the_chat_and_clears_replies(
+    client: TestClient, lead: Account, member: Account, meeting: dict
+) -> None:
+    client.put(
+        f"/meetings/{meeting['id']}/response", json={"response": "accepted"}, headers=lead.headers
+    )
+    new_start = datetime.now(UTC).replace(microsecond=0) + timedelta(days=2)
+
+    response = _edit(client, member, meeting["id"], starts_at=new_start.isoformat())
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert datetime.fromisoformat(body["starts_at"]) == new_start
+    assert body["counts"]["accepted"] == 0 and body["responses"] == []
+    messages = client.get(
+        f"/conversations/{meeting['conversation_id']}/messages", headers=lead.headers
+    ).json()
+    assert messages[-1]["body"] == "Moved the meeting: Stand-up - please reply again"
+
+
+def test_making_it_longer_also_counts_as_moving_it(
+    client: TestClient, member: Account, meeting: dict
+) -> None:
+    response = _edit(client, member, meeting["id"], duration_minutes=90)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["duration_minutes"] == 90
+    assert response.json()["ends_at"] != meeting["ends_at"]
+
+
+def test_an_admin_can_edit_a_team_meeting(
+    client: TestClient, admin: Account, meeting: dict
+) -> None:
+    assert _edit(client, admin, meeting["id"], title="Audit").status_code == 200
+
+
+def test_an_invitee_cannot_edit(client: TestClient, lead: Account, meeting: dict) -> None:
+    response = _edit(client, lead, meeting["id"], title="Hijacked")
+
+    assert response.status_code == 403, response.text
+    assert "change or cancel" in response.json()["detail"]
+
+
+def test_an_outsider_gets_404_when_editing(
+    client: TestClient, outsider: Account, meeting: dict
+) -> None:
+    assert _edit(client, outsider, meeting["id"], title="x").status_code == 404
+
+
+def test_a_cancelled_meeting_cannot_be_edited(
+    client: TestClient, member: Account, meeting: dict
+) -> None:
+    client.post(f"/meetings/{meeting['id']}/cancel", headers=member.headers)
+
+    assert _edit(client, member, meeting["id"], title="Back on").status_code == 409
+
+
+def test_a_meeting_cannot_be_moved_into_the_past(
+    client: TestClient, member: Account, meeting: dict
+) -> None:
+    response = _edit(client, member, meeting["id"], starts_at=_in(-120))
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"title": None},
+        {"starts_at": None},
+        {"duration_minutes": None},
+        {"title": "  "},
+        {"duration_minutes": 1},
+        {"reminder_minutes": [7]},
+        {"starts_at": "2199-06-01T14:00:00"},
+    ],
+)
+def test_bad_edits_are_refused(
+    client: TestClient, member: Account, meeting: dict, fields: dict
+) -> None:
+    assert _edit(client, member, meeting["id"], **fields).status_code == 422
+
+
+# ------------------------------------------------------------------ reminders
+
+
+def test_the_hosts_reminders_are_kept_sorted_without_repeats(
+    client: TestClient, team: dict, member: Account, lead: Account
+) -> None:
+    body = _team_meeting(client, member, team["id"], reminder_minutes=[60, 0, 60, 15])
+
+    assert body["reminder_minutes"] == [0, 15, 60]
+    invitee_view = client.get(f"/meetings/{body['id']}", headers=lead.headers).json()
+    assert invitee_view["reminder_minutes"] == [0, 15, 60]
+
+
+def test_a_meeting_says_when_it_was_made(client: TestClient, team: dict, member: Account) -> None:
+    before = datetime.now(UTC) - timedelta(seconds=5)
+
+    body = _team_meeting(client, member, team["id"])
+
+    # Clients use it so the host of an instant meeting isn't "reminded" of it.
+    created = datetime.fromisoformat(body["created_at"])
+    assert created.utcoffset() == timedelta(0)
+    assert before <= created <= datetime.now(UTC) + timedelta(seconds=5)
+
+
+def test_a_meeting_has_no_host_reminders_unless_set(client: TestClient, meeting: dict) -> None:
+    assert meeting["reminder_minutes"] == []
+
+
+def test_an_instant_meeting_drops_reminders(
+    client: TestClient, team: dict, member: Account
+) -> None:
+    body = _team_meeting(client, member, team["id"], starts_at=None, reminder_minutes=[15])
+
+    assert body["reminder_minutes"] == []
+
+
+@pytest.mark.parametrize(
+    "reminders", [[7], [-5], [1441], ["soon"], [0, 5, 10, 15, 30, 60, 120, 1440, 1440], None]
+)
+def test_bad_reminder_times_are_refused(
+    client: TestClient, team: dict, member: Account, reminders
+) -> None:
+    response = client.post(
+        f"/teams/{team['id']}/meetings",
+        json={"title": "Stand-up", "starts_at": _in(60), "reminder_minutes": reminders},
+        headers=member.headers,
+    )
+
+    assert response.status_code == 422, response.text
+
+
 # ------------------------------------------------------------------ dashboard
 
 

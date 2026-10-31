@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from client.api_client import ApiClient
 from client.viewmodels.conversation_list_viewmodel import ConversationListViewModel
+from client.viewmodels.meetings_viewmodel import MeetingsViewModel
 from client.views.chat_thread_panel import ChatThreadPanel
 from client.views.new_chat_dialog import NewChatDialog
 from client.views.new_group_dialog import NewGroupDialog
@@ -24,7 +25,12 @@ class ChatPage(QWidget):
     select, no pop-up windows.
     """
 
-    def __init__(self, api_client: ApiClient, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        api_client: ApiClient,
+        parent: QWidget | None = None,
+        meetings: MeetingsViewModel | None = None,
+    ) -> None:
         super().__init__(parent)
         self.api_client = api_client
 
@@ -49,7 +55,7 @@ class ChatPage(QWidget):
         list_panel = QWidget()
         list_panel.setLayout(list_layout)
 
-        self.thread_panel = ChatThreadPanel(api_client)
+        self.thread_panel = ChatThreadPanel(api_client, meetings=meetings)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(list_panel)

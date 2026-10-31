@@ -18,9 +18,9 @@ while you are typing in it.
 """
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime, time
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, QTime
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -55,8 +56,9 @@ from client.viewmodels.projects_viewmodel import (
 )
 from client.views.gantt_chart import GanttChart, parse_day
 from client.views.teams_view import ask_yes_no
+from client.views.time_text import due_moment, show_due, zone_name
 from client.views.widgets import ElidedLabel, ErrorLabel
-from shared.date_rules import EARLIEST_TASK_DATE, LATEST_TASK_DATE
+from shared.date_rules import DEFAULT_DUE_TIME, EARLIEST_TASK_DATE, LATEST_TASK_DATE
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 #: A subtask item's bare title (its text also shows the assignee and dates).
@@ -92,11 +94,11 @@ def subtask_label(subtask: dict) -> str:
         details.append("in progress")
     if subtask["assignee"]:
         details.append(subtask["assignee"]["name"])
-    start, due = parse_day(subtask["start_date"]), parse_day(subtask["due_date"])
+    start, due = parse_day(subtask["start_date"]), show_due(subtask, year=False)
     if start and due:
-        details.append(f"{start:%b %d} - {due:%b %d}")
+        details.append(f"{start:%b %d} - {due}")
     elif due:
-        details.append(f"due {due:%b %d}")
+        details.append(f"due {due}")
     elif start:
         details.append(f"from {start:%b %d}")
     return subtask["title"] + (f"  ({', '.join(details)})" if details else "")
@@ -107,10 +109,22 @@ def _qdate(value: date) -> QDate:
     return QDate(value.year, value.month, value.day)
 
 
-class OptionalDateEdit(QWidget):
-    """A date that may be left unset: a checkbox, then a date picker it enables."""
+def _qtime(value: time) -> QTime:
+    """A ``time`` as a ``QTime`` (to the minute)."""
+    return QTime(value.hour, value.minute)
 
-    def __init__(self, label: str, parent: QWidget | None = None) -> None:
+
+class OptionalDateEdit(QWidget):
+    """A date that may be left unset: a checkbox, then a date picker it enables.
+
+    With ``with_time`` (deadlines) there is also a time picker, starting at
+    11:59 PM, and the name of this computer's time zone: the deadline is that
+    moment here, and teammates elsewhere see it in their own time.
+    """
+
+    def __init__(
+        self, label: str, parent: QWidget | None = None, *, with_time: bool = False
+    ) -> None:
         super().__init__(parent)
         self.check = QCheckBox(label)
         self.edit = QDateEdit()
@@ -126,16 +140,59 @@ class OptionalDateEdit(QWidget):
         layout.addWidget(self.check)
         layout.addWidget(self.edit, stretch=1)
 
+        self.time_edit: QTimeEdit | None = None
+        self.zone_label: QLabel | None = None
+        if with_time:
+            self.time_edit = QTimeEdit(_qtime(DEFAULT_DUE_TIME))
+            self.time_edit.setDisplayFormat("h:mm AP")
+            self.time_edit.setEnabled(False)
+            self.check.toggled.connect(self.time_edit.setEnabled)
+            self.zone_label = QLabel()
+            self.zone_label.setProperty("muted", True)
+            layout.addWidget(self.time_edit)
+            layout.addWidget(self.zone_label)
+            self._show_zone()
+            self.edit.dateChanged.connect(lambda *_: self._show_zone())
+
     def value(self) -> date | None:
         """The chosen date, or None when the box is unticked."""
         if not self.check.isChecked():
             return None
         return self.edit.date().toPython()
 
+    def moment(self) -> datetime | None:
+        """The chosen date and time in this computer's zone (time-zone aware), or
+        None when unticked. Without a time picker, 11:59 PM that day."""
+        day = self.value()
+        if day is None:
+            return None
+        chosen = self.time_edit.time().toPython() if self.time_edit else DEFAULT_DUE_TIME
+        # astimezone() attaches this computer's offset for that date (summer or winter).
+        return datetime.combine(day, chosen.replace(second=0, microsecond=0)).astimezone()
+
     def set_value(self, value: date | None) -> None:
-        """Show ``value``, or untick the box for None (keeping today in the picker)."""
+        """Show ``value``, or untick the box for None (keeping today in the picker).
+        The time goes back to 11:59 PM."""
         self.check.setChecked(value is not None)
         self.edit.setDate(_qdate(value) if value else QDate.currentDate())
+        if self.time_edit is not None:
+            self.time_edit.setTime(_qtime(DEFAULT_DUE_TIME))
+
+    def set_moment(self, value: datetime | None) -> None:
+        """Show an exact deadline in this computer's zone (date and time)."""
+        if value is None:
+            self.set_value(None)
+            return
+        here = value.astimezone()
+        self.set_value(here.date())
+        if self.time_edit is not None:
+            self.time_edit.setTime(_qtime(here.time()))
+
+    def _show_zone(self) -> None:
+        """Name the zone for the picked date (it can differ between summer and winter)."""
+        if self.zone_label is not None:
+            noon = datetime.combine(self.edit.date().toPython(), time(12, 0)).astimezone()
+            self.zone_label.setText(zone_name(noon))
 
 
 class ProjectsView(QWidget):
@@ -294,6 +351,7 @@ class ProjectsView(QWidget):
             self.subtask_start_input.edit.dateChanged,
             self.subtask_due_input.check.toggled,
             self.subtask_due_input.edit.dateChanged,
+            self.subtask_due_input.time_edit.timeChanged,
         ):
             signal.connect(self._mark_subtask_dirty)
         for signal in (
@@ -305,6 +363,7 @@ class ProjectsView(QWidget):
             self.start_input.edit.dateChanged,
             self.due_input.check.toggled,
             self.due_input.edit.dateChanged,
+            self.due_input.time_edit.timeChanged,
         ):
             signal.connect(self._mark_dirty)
 
@@ -356,7 +415,7 @@ class ProjectsView(QWidget):
         self.description_input.setFixedHeight(64)
         self.assignee_combo = QComboBox()
         self.start_input = OptionalDateEdit("Start")
-        self.due_input = OptionalDateEdit("Due")
+        self.due_input = OptionalDateEdit("Due", with_time=True)
         self.status_combo = QComboBox()
         for value, label in STATUS_LABELS.items():
             self.status_combo.addItem(label, value)
@@ -405,7 +464,7 @@ class ProjectsView(QWidget):
             self.subtask_status_combo.addItem(label, value)
         self.subtask_assignee_combo = QComboBox()
         self.subtask_start_input = OptionalDateEdit("Start")
-        self.subtask_due_input = OptionalDateEdit("Due")
+        self.subtask_due_input = OptionalDateEdit("Due", with_time=True)
         self.save_subtask_button = QPushButton("Save subtask")
         self.subtask_editor = QGroupBox("Selected subtask")
         subtask_form = QFormLayout(self.subtask_editor)
@@ -626,7 +685,7 @@ class ProjectsView(QWidget):
                 task["title"],
                 assignee,
                 show_date(task["start_date"]),
-                show_date(task["due_date"]),
+                show_due(task),
                 STATUS_LABELS.get(task["status"], task["status"]),
                 subtasks,
             )
@@ -655,10 +714,20 @@ class ProjectsView(QWidget):
         self.title_input.setText(task["title"] if task else "")
         self.description_input.setPlainText((task or {}).get("description") or "")
         self.start_input.set_value(parse_day(task["start_date"]) if task else None)
-        self.due_input.set_value(parse_day(task["due_date"]) if task else None)
+        self._show_deadline(self.due_input, task)
         status = task["status"] if task else "todo"
         self.status_combo.setCurrentIndex(max(0, self.status_combo.findData(status)))
         self._pending_assignee = task["assignee"]["id"] if task and task["assignee"] else None
+
+    @staticmethod
+    def _show_deadline(field: OptionalDateEdit, item: dict | None) -> None:
+        """Put a task's or subtask's deadline in a due-date field: its exact time in
+        this computer's zone, or (from an older server) just its date."""
+        moment = due_moment(item) if item else None
+        if moment is not None:
+            field.set_moment(moment)
+        else:
+            field.set_value(parse_day(item["due_date"]) if item else None)
 
     def _fill_assignees(self, keep_choice: bool) -> None:
         """The assignee picker: "Unassigned" and the team's members."""
@@ -738,7 +807,7 @@ class ProjectsView(QWidget):
             index = self.subtask_assignee_combo.findData(current)
             self.subtask_assignee_combo.setCurrentIndex(max(0, index))
             self.subtask_start_input.set_value(parse_day(subtask["start_date"]))
-            self.subtask_due_input.set_value(parse_day(subtask["due_date"]))
+            self._show_deadline(self.subtask_due_input, subtask)
         finally:
             self._filling = was_filling
         self._subtask_form_id = subtask["id"]
@@ -904,6 +973,7 @@ class ProjectsView(QWidget):
             "assignee_id": self.assignee_combo.currentData(),
             "start_date": self.start_input.value(),
             "due_date": self.due_input.value(),
+            "due_at": self.due_input.moment(),
             "status": self.status_combo.currentData(),
         }
 
@@ -965,6 +1035,7 @@ class ProjectsView(QWidget):
             assignee_id=self.subtask_assignee_combo.currentData(),
             start_date=self.subtask_start_input.value(),
             due_date=self.subtask_due_input.value(),
+            due_at=self.subtask_due_input.moment(),
         )
         if self.viewmodel.busy:  # accepted: let the reload refill the editor
             self._subtask_dirty = False

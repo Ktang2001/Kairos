@@ -5,7 +5,7 @@ Uses the shared fixtures from conftest.py: Lena (``lead``) leads team Alpha,
 Max (``member``) is on it, Ada (``admin``) and Olga (``outsider``) are not.
 """
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,9 +35,12 @@ def project(client: TestClient, lead: Account, team: dict) -> dict:
 
 @pytest.fixture
 def fixed_today(monkeypatch) -> date:
-    """Pin the chart's "today" to ``D`` + 10 days."""
+    """Pin the chart's "today" to ``D`` + 10 days, and "now" to noon that day
+    (local time) -- overdue is judged by deadlines' exact moments."""
     today = D + timedelta(days=10)
+    noon = datetime.combine(today, time(12, 0)).astimezone().astimezone(UTC).replace(tzinfo=None)
     monkeypatch.setattr(gantt_service, "local_today", lambda: today)
+    monkeypatch.setattr(gantt_service, "utcnow", lambda: noon)
     return today
 
 

@@ -45,3 +45,31 @@ PAST_START_GRACE = timedelta(minutes=5)
 #: The public Jitsi server. Hosts can point Kairos at another one (a
 #: self-hosted Jitsi) in the server settings.
 DEFAULT_JITSI_BASE_URL = "https://meet.jit.si"
+
+# ------------------------------------------------------------------ reminders
+#
+# Everyone (except people who declined) is reminded at their own Profile
+# default, plus at any times the host set for the meeting; a time that is in
+# both goes off once (client/viewmodels/meeting_reminders.py).
+
+#: Minutes before the start a host can add a reminder for everyone (0 = at
+#: the start).
+REMINDER_CHOICES: tuple[int, ...] = (0, 5, 10, 15, 30, 60, 120, 1440)
+
+#: Minutes before the start each person can pick as their own default on the
+#: Profile page (or Off).
+PROFILE_REMINDER_CHOICES: tuple[int, ...] = (5, 10, 15, 30, 60)
+DEFAULT_REMINDER_MINUTES = 15
+
+
+def reminder_label(minutes: int) -> str:
+    """ "At start", "5 minutes before", "1 hour before", "1 day before"."""
+    if minutes == 0:
+        return "At start"
+    if minutes % 1440 == 0:
+        days = minutes // 1440
+        return f"{days} day{'s' if days != 1 else ''} before"
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return f"{hours} hour{'s' if hours != 1 else ''} before"
+    return f"{minutes} minute{'s' if minutes != 1 else ''} before"

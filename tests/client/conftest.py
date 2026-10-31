@@ -43,6 +43,7 @@ from client.viewmodels.background import wait_until_idle
 from server.db.session import configure_sqlite, get_db, open_session
 from server.main import create_app
 from server.models import Base
+from server.models.server_settings import ServerSettings
 from server.tls import ensure_server_cert
 
 TEST_PASSWORD = "correct-horse-battery"
@@ -128,6 +129,19 @@ def live_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     _LIVE_DB["factory"] = factory
+    # The settings row a migrated database gets from its migration
+    # (80896866bfa4); create_all makes the table only. Meetings read it for
+    # the Jitsi address, uploads for the folder and size limit.
+    with factory() as db:
+        db.add(
+            ServerSettings(
+                id=1,
+                display_name="Live Test Server",
+                upload_root=str(database_file.parent / "uploads"),
+                max_upload_size_bytes=10 * 1024 * 1024,
+            )
+        )
+        db.commit()
 
     def override_get_db(request: Request = None) -> Iterator[Session]:  # type: ignore[assignment]
         # Same per-request locking as the real get_db (server.db.session).

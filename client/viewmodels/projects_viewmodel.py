@@ -13,7 +13,7 @@ create a task twice.
 """
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 
 from PySide6.QtCore import QObject, Signal
 
@@ -65,15 +65,34 @@ def _iso(value: date | None) -> str | None:
     return value.isoformat() if value else None
 
 
+def same_deadline(chosen: datetime | None, loaded: dict | None) -> bool:
+    """True if the deadline in the form is the one the item already has.
+
+    Then a save leaves it out, so editing only a title doesn't re-stamp the
+    deadline's day in this computer's zone (``due_date`` is the day in the
+    zone of whoever last set it). ``loaded`` is the task/subtask as the
+    server sent it.
+    """
+    if loaded is None:
+        return False
+    stored = loaded.get("due_at")
+    if stored is None or chosen is None:
+        return stored is None and chosen is None and loaded.get("due_date") is None
+    return datetime.fromisoformat(stored) == chosen
+
+
 def to_request(fields: dict) -> dict:
-    """The task form's values in the form the API takes: trimmed text, ISO dates."""
+    """The task form's values in the form the API takes: trimmed text, ISO dates,
+    and the exact deadline (``due_at``) with this computer's offset."""
     body = dict(fields)
     body["title"] = clean_display_text(body["title"])
     description = (body.get("description") or "").strip()
     body["description"] = description or None
-    for key in ("start_date", "due_date"):
+    for key in ("start_date", "due_date", "due_at"):
         value = body.get(key)
         body[key] = value.isoformat() if isinstance(value, date) else value
+    if "due_at" not in fields:
+        body.pop("due_at")
     return body
 
 
@@ -211,7 +230,8 @@ class ProjectsViewModel(QObject):
         """Create a task from the form's values; it becomes the chosen task.
 
         ``fields``: title, description, assignee_id, start_date, due_date
-        (``datetime.date`` or None) and status.
+        (``datetime.date`` or None), due_at (the exact deadline, a time-zone
+        aware ``datetime``, or None) and status.
         """
         if self.project is None:
             return
@@ -229,6 +249,9 @@ class ProjectsViewModel(QObject):
             self.error_changed.emit(problem)
             return
         task_id, body = self.task["id"], to_request(fields)
+        if same_deadline(fields.get("due_at"), self.task):
+            body.pop("due_at", None)
+            body.pop("due_date", None)
         body["version"] = self.task.get("version")
         self._run(lambda client: client.update_task(task_id, **body), reload_on_conflict=True)
 
@@ -269,8 +292,13 @@ class ProjectsViewModel(QObject):
         assignee_id: int | None,
         start_date: date | None,
         due_date: date | None,
+        due_at: datetime | None = None,
     ) -> None:
-        """Rename a subtask, set its status, assign it and set its dates (None clears them)."""
+        """Rename a subtask, set its status, assign it and set its dates (None clears them).
+
+        ``due_at`` is the exact deadline (time-zone aware); without it the
+        server makes ``due_date`` due at 11:59 PM.
+        """
         if problem := name_problem(title, what="subtask title", limit=MAX_TITLE_LENGTH):
             self.error_changed.emit(problem)
             return
@@ -284,8 +312,13 @@ class ProjectsViewModel(QObject):
             "start_date": _iso(start_date),
             "due_date": _iso(due_date),
         }
+        if due_at is not None or due_date is None:
+            body["due_at"] = due_at.isoformat() if due_at is not None else None
         subtasks = (self.task or {}).get("subtasks", [])
         loaded = next((s for s in subtasks if s["id"] == subtask_id), {})
+        if loaded and same_deadline(due_at, loaded):
+            body.pop("due_at", None)
+            body.pop("due_date", None)
         body["version"] = loaded.get("version")
         self._run(lambda client: client.update_subtask(subtask_id, **body), reload_on_conflict=True)
 

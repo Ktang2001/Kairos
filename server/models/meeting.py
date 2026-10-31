@@ -9,7 +9,7 @@ also see it (server/services/meeting_service.py).
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import DateTime, ForeignKey, func
+from sqlalchemy import JSON, DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.models.base import Base
@@ -35,6 +35,12 @@ class Meeting(Base):
     #: Naive UTC, like every other stored time.
     starts_at: Mapped[datetime] = mapped_column(DateTime(), index=True)
     duration_minutes: Mapped[int]
+    #: Reminders the host set for everyone, in minutes before the start
+    #: (shared/meetings.py REMINDER_CHOICES), sorted, no repeats. Each person's
+    #: own Profile default comes on top of these, on their own computer.
+    reminder_minutes: Mapped[list[int]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
     #: The Jitsi room. Random and unguessable: a public Jitsi room has no
     #: access control of its own, so anyone who knows the name can join.
     room_name: Mapped[str] = mapped_column(unique=True)

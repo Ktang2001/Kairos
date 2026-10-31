@@ -12,8 +12,10 @@ Who may do what:
   as teams.
 * Anyone who can see a meeting may reply (accept / tentative / decline) and
   join it, except the host, who doesn't reply to their own meeting.
-* Only the host or an admin may cancel it. Cancelling posts a message in the
-  chat, so everyone in it sees it at their next poll.
+* Only the host or an admin may change or cancel it. Cancelling, or moving
+  it to another time, posts a message in the chat, so everyone in it sees it
+  at their next poll; moving it also clears the replies, as people need to
+  say again whether the new time suits them.
 * A cancelled or finished meeting can't be replied to or joined. Join asks
   the server every time, so a stale "Join" button on someone's screen can't
   open a cancelled meeting.
@@ -59,7 +61,7 @@ class NotOnTeam(MeetingError):
 
 
 class NotMeetingHost(MeetingError):
-    """Only the host or an admin can cancel a meeting."""
+    """Only the host or an admin can change or cancel a meeting."""
 
 
 class HostCannotRespond(MeetingError):
@@ -172,11 +174,14 @@ def create_in_conversation(
     duration_minutes: int,
     client_token: str | None,
     now: datetime,
+    reminder_minutes: list[int] | None = None,
 ) -> Meeting:
     """Start (``starts_at`` None) or schedule a meeting in a conversation.
 
     Posts the chat message that announces it and creates the meeting in one
     commit. ``starts_at`` is time-zone aware; ``now`` is naive UTC.
+    ``reminder_minutes`` (checked by the schema) are the host's reminders for
+    everyone; an instant meeting has none, as it is already starting.
     """
     if not _is_participant(db, conversation_id, host.id):
         raise ConversationNotFound(conversation_id)
@@ -211,6 +216,7 @@ def create_in_conversation(
         title=title,
         starts_at=start,
         duration_minutes=duration_minutes,
+        reminder_minutes=sorted(set(reminder_minutes or [])) if starts_at is not None else [],
         room_name=_new_room_name(db),
         jitsi_base_url=server_settings_service.get_settings(db).jitsi_base_url,
     )
@@ -281,6 +287,53 @@ def cancel(
     db.add(notice)
     db.commit()
     db.refresh(notice)
+    return _reload(db, meeting_id), notice
+
+
+def update(
+    db: OrmSession, meeting_id: int, user: User, *, changes: dict, now: datetime
+) -> tuple[Meeting, ChatMessage | None]:
+    """Change a meeting's title, start, length or reminders (host or admin only).
+
+    ``changes`` holds only the fields sent; ``starts_at`` is time-zone aware.
+    Returns the meeting and the "moved" chat message, posted only when the
+    time changed (None otherwise). Refused once it is cancelled or over.
+    """
+    meeting = get_visible_meeting(db, meeting_id, user)
+    if not can_cancel(meeting, user):
+        raise NotMeetingHost(meeting_id)
+    _require_open(meeting, now)
+
+    old_start, old_length = meeting.starts_at, meeting.duration_minutes
+    if "starts_at" in changes:
+        starts_at = changes["starts_at"]
+        if not date_in_range(starts_at.date()):
+            raise StartOutOfRange(starts_at)
+        start = utc_naive(starts_at)
+        # Moving it is refused into the past; leaving an under-way meeting's
+        # start alone (sent back unchanged) is fine.
+        if start != old_start and start < now - PAST_START_GRACE:
+            raise StartInPast(starts_at)
+        meeting.starts_at = start
+    if "duration_minutes" in changes:
+        meeting.duration_minutes = changes["duration_minutes"]
+    if "title" in changes:
+        meeting.title = changes["title"]
+    if "reminder_minutes" in changes:
+        meeting.reminder_minutes = sorted(set(changes["reminder_minutes"]))
+
+    notice = None
+    if (meeting.starts_at, meeting.duration_minutes) != (old_start, old_length):
+        meeting.rsvps.clear()
+        notice = ChatMessage(
+            conversation_id=meeting.conversation_id,
+            sender_user_id=user.id,
+            body=f"Moved the meeting: {meeting.title} - please reply again",
+        )
+        db.add(notice)
+    db.commit()
+    if notice is not None:
+        db.refresh(notice)
     return _reload(db, meeting_id), notice
 
 

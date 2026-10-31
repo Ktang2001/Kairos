@@ -178,6 +178,59 @@ def test_migrations_upgrade_downgrade_upgrade(tmp_path: Path) -> None:
     assert "uq_teams_name_lower" in names
 
 
+def test_existing_deadlines_get_end_of_day_when_upgraded(tmp_path: Path) -> None:
+    """Migration e36d129f7870 gives every existing deadline an exact time: 11:59 PM
+    on its date in this computer's zone (stored as UTC)."""
+    from datetime import UTC, date, datetime, time
+
+    database_file = tmp_path / "deadlines.db"
+    cfg = Config(str(ALEMBIC_INI))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{database_file.as_posix()}")
+    command.upgrade(cfg, "bd9be5aae993")
+    conn = sqlite3.connect(database_file)
+    try:
+        conn.execute("insert into roles (id, name) values (1, 'member')")
+        conn.execute(
+            "insert into users (id, name, email, password_hash, role_id) "
+            "values (1, 'Max', 'max@example.com', 'x', 1)"
+        )
+        conn.execute("insert into teams (id, name, lead_id) values (1, 'Alpha', 1)")
+        conn.execute(
+            "insert into projects (id, team_id, name, status) values (1, 1, 'Site', 'active')"
+        )
+        conn.execute(
+            "insert into tasks (id, project_id, title, status, due_date) "
+            "values (1, 1, 'Dated', 'todo', '2026-11-04')"
+        )
+        conn.execute(
+            "insert into tasks (id, project_id, title, status) values (2, 1, 'Undated', 'todo')"
+        )
+        conn.execute(
+            "insert into subtasks (id, task_id, title, status, due_date) "
+            "values (1, 1, 'Sub', 'todo', '2026-11-05')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    command.upgrade(cfg, "head")
+
+    conn = sqlite3.connect(database_file)
+    try:
+        tasks = dict(conn.execute("select id, due_at from tasks").fetchall())
+        subtask_due = conn.execute("select due_at from subtasks").fetchone()[0]
+    finally:
+        conn.close()
+
+    def end_of_day(day: date) -> datetime:
+        return datetime.combine(day, time(23, 59)).astimezone().astimezone(UTC).replace(tzinfo=None)
+
+    assert datetime.fromisoformat(tasks[1]) == end_of_day(date(2026, 11, 4))
+    assert tasks[2] is None
+    assert datetime.fromisoformat(subtask_due) == end_of_day(date(2026, 11, 5))
+    command.downgrade(cfg, "bd9be5aae993")
+
+
 # ------------------------------------------- database version (found in use)
 
 

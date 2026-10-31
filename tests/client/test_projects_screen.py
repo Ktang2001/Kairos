@@ -8,23 +8,24 @@ a page that merely looks right can't pass.
 
 import tempfile
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import httpx
 import pytest
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, QTime
 from pytestqt.qtbot import QtBot
 
 from client.api_client import ApiClient
 from client.theme import ThemeManager
 from client.views.app_shell import AppShell
-from client.views.projects_view import ProjectsView
+from client.views.projects_view import TASK_COLUMNS, ProjectsView
+from client.views.time_text import zone_name
 from shared.roles import ROLE_ADMIN, ROLE_MEMBER, ROLE_PROJECT_LEAD
 from tests.client.conftest import SETUP_TIMEOUT, TEST_PASSWORD, set_live_role, unique_email
 
 WAIT_MS = 8000
-PROJECTS_ROW = 3  # Dashboard, Chat, Teams, Projects, [Users, Server Settings]
+PROJECTS_ROW = 3  # Dashboard, Chat, Teams, Projects, Profile, [Users, Server Settings]
 
 
 @dataclass
@@ -584,7 +585,11 @@ def test_a_member_assigns_and_dates_a_subtask(qtbot: QtBot, crew: Crew) -> None:
     [subtask] = crew.lead.client.get_task(task_id)["subtasks"]
     assert subtask["assignee"]["id"] == crew.member.user["id"]
     assert (subtask["start_date"], subtask["due_date"]) == ("2026-11-02", "2026-11-04")
-    assert view.subtasks_list.item(0).text() == "Write announcement  (Max, Nov 02 - Nov 04)"
+    # The deadline is 11:59 PM unless a time is picked, shown in this computer's zone.
+    zone = zone_name(datetime(2026, 11, 4, 23, 59).astimezone())
+    assert view.subtasks_list.item(0).text() == (
+        f"Write announcement  (Max, Nov 02 - Nov 04 11:59 PM {zone})"
+    )
     # Still selected after the reload, showing what was saved.
     assert view.subtasks_list.currentRow() == 0
     assert combo.currentData() == crew.member.user["id"]
@@ -603,7 +608,8 @@ def test_clearing_a_subtasks_assignee_and_dates(qtbot: QtBot, crew: Crew) -> Non
     view.tasks_table.selectRow(0)
     _settle(qtbot, view)
     view.subtasks_list.setCurrentRow(0)
-    assert view.subtasks_list.item(0).text() == "Step  (Max, due Nov 04)"
+    zone = zone_name(datetime(2026, 11, 4, 23, 59).astimezone())
+    assert view.subtasks_list.item(0).text() == f"Step  (Max, due Nov 04 11:59 PM {zone})"
 
     view.subtask_assignee_combo.setCurrentIndex(0)
     view.subtask_due_input.set_value(None)
@@ -832,3 +838,25 @@ def test_a_project_completed_mid_edit_refuses_the_save_and_turns_read_only(
     assert "This project is completed" in view.error_label.text()
     assert not view.editor_box.isEnabled()
     assert crew.lead.client.list_tasks(project["id"])[0]["title"] == "Draft"
+
+
+def test_a_task_deadline_has_an_exact_time(qtbot: QtBot, crew: Crew) -> None:
+    project = _project_with_tasks(crew, {"title": "Launch"})
+    view = _open(qtbot, crew.member)
+    view.tasks_table.selectRow(0)
+    _settle(qtbot, view)
+
+    view.due_input.set_value(date(2026, 11, 4))
+    view.due_input.time_edit.setTime(QTime(9, 30))
+    view.save_task_button.click()
+    _settle(qtbot, view)
+
+    [task] = crew.lead.client.list_tasks(project["id"])
+    local_due = datetime(2026, 11, 4, 9, 30).astimezone()
+    assert task["due_date"] == "2026-11-04"
+    assert datetime.fromisoformat(task["due_at"]) == local_due
+    # Shown in this computer's zone, in the list and back in the editor.
+    due_cell = view.tasks_table.item(0, TASK_COLUMNS.index("Due")).text()
+    assert due_cell == f"Nov 04, 2026 9:30 AM {zone_name(local_due)}"
+    assert view.due_input.time_edit.time() == QTime(9, 30)
+    assert view.due_input.zone_label.text() == zone_name(datetime(2026, 11, 4, 12, 0).astimezone())

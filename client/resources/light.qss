@@ -60,7 +60,7 @@ QPushButton[primary="true"]:disabled {
 }
 
 /* --- Inputs --- */
-QLineEdit, QComboBox, QSpinBox {
+QLineEdit, QComboBox, QSpinBox, QDateTimeEdit {
     background-color: #FFFFFF;
     border: 1px solid #D8DCE3;
     border-radius: 6px;
@@ -69,7 +69,7 @@ QLineEdit, QComboBox, QSpinBox {
     selection-color: #FFFFFF;
 }
 
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDateTimeEdit:focus {
     border: 1px solid #3D6AF2;
 }
 
@@ -199,6 +199,26 @@ QCalendarWidget {
 
 QCalendarWidget QToolButton {
     color: #1B1F27;
+}
+
+/* The month arrows: text set in client/views/dashboard_page.py, so they take
+   the theme's text colour (Qt's own arrow icons are black on every theme). */
+QCalendarWidget QToolButton#qt_calendar_prevmonth,
+QCalendarWidget QToolButton#qt_calendar_nextmonth {
+    font-size: 18pt;
+    font-weight: bold;
+    padding: 0px 8px;
+}
+
+/* The day grid. Its weekday row and week-number column are painted in the
+   palette's alternate-base colour, which nothing else sets: on the dark theme
+   they stayed Qt's default light grey, with the theme's light text on top. */
+QCalendarWidget QAbstractItemView {
+    background-color: #FFFFFF;
+    alternate-background-color: #F3F5F8;
+    color: #1B1F27;
+    selection-background-color: #3D6AF2;
+    selection-color: #FFFFFF;
 }
 
 /* --- Dashboard --- */

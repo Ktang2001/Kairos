@@ -62,3 +62,31 @@ def test_labels_showing_user_data_are_plain_text(qtbot: QtBot, cls: type) -> Non
     label = cls()
     qtbot.addWidget(label)
     assert label.textFormat() == Qt.TextFormat.PlainText
+
+
+def test_meeting_cards_show_titles_and_names_as_plain_text(qtbot: QtBot) -> None:
+    from client.views.meeting_card import MeetingCard
+    from tests.client.meeting_data import make_meeting
+
+    card = MeetingCard(make_meeting(title=PAYLOAD))
+    qtbot.addWidget(card)
+
+    for label in (
+        card.title_label,
+        card.when_label,
+        card.who_label,
+        card.status_label,
+        card.counts_label,
+    ):
+        assert label.textFormat() == Qt.TextFormat.PlainText
+    assert card.title_label.full_text == PAYLOAD
+
+
+def test_the_chat_title_and_status_are_plain_text(qtbot: QtBot) -> None:
+    from client.views.chat_thread_panel import ChatThreadPanel
+
+    panel = ChatThreadPanel(api_client=None)
+    qtbot.addWidget(panel)
+
+    assert panel.title_label.textFormat() == Qt.TextFormat.PlainText
+    assert panel.status_label.textFormat() == Qt.TextFormat.PlainText

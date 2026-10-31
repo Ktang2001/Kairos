@@ -19,7 +19,14 @@ from server.models.meeting import Meeting
 from server.models.user import User
 from server.realtime.connection_manager import manager
 from server.schemas.chat_message import ChatMessageOut
-from server.schemas.meeting import JoinOut, MeetingCreate, MeetingOut, RsvpIn, to_meeting_out
+from server.schemas.meeting import (
+    JoinOut,
+    MeetingCreate,
+    MeetingOut,
+    MeetingUpdate,
+    RsvpIn,
+    to_meeting_out,
+)
 from server.services import conversation_service, meeting_service
 from server.services.task_service import utcnow
 
@@ -151,6 +158,29 @@ async def respond_to_meeting(
     except KNOWN_ERRORS as exc:
         raise http_error(exc) from None
     await _announce(db, meeting)
+    return _out(meeting, current_user)
+
+
+@router.patch("/meetings/{meeting_id}", response_model=MeetingOut)
+async def update_meeting(
+    meeting_id: int,
+    payload: MeetingUpdate,
+    db: OrmSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> MeetingOut:
+    """Change a meeting's title, start, length or reminders: its host or an admin
+    only. Moving it to another time tells the chat and clears the replies."""
+    try:
+        meeting, notice = meeting_service.update(
+            db,
+            meeting_id,
+            current_user,
+            changes=payload.model_dump(exclude_unset=True),
+            now=utcnow(),
+        )
+    except KNOWN_ERRORS as exc:
+        raise http_error(exc) from None
+    await _announce(db, meeting, notice)
     return _out(meeting, current_user)
 
 

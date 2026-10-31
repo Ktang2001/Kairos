@@ -36,11 +36,17 @@ class ServerSettingsPage(QWidget):
         self.upload_root_input.setPlaceholderText("(leave blank to keep unchanged)")
         self.max_upload_mb_input = QLineEdit()
         self.max_upload_mb_input.setPlaceholderText("(leave blank to keep unchanged)")
+        self.jitsi_input = QLineEdit()
+        self.jitsi_input.setPlaceholderText("https://meet.jit.si")
+        self.jitsi_input.setToolTip(
+            "Where meetings are held. Changing it only affects meetings made afterwards."
+        )
 
         form = QFormLayout()
         form.addRow("Display name:", self.display_name_input)
         form.addRow("Upload folder (host path):", self.upload_root_input)
         form.addRow("Max upload size (MB):", self.max_upload_mb_input)
+        form.addRow("Meeting server (Jitsi):", self.jitsi_input)
 
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self._on_save)
@@ -65,10 +71,12 @@ class ServerSettingsPage(QWidget):
         max_bytes = info.get("max_upload_size_bytes")
         if max_bytes:
             self.max_upload_mb_input.setText(str(max_bytes // (1024 * 1024)))
+        self.jitsi_input.setText(info.get("jitsi_base_url", ""))
 
     def _on_save(self) -> None:
         display_name = self.display_name_input.text().strip() or None
         upload_root = self.upload_root_input.text().strip() or None
+        jitsi_base_url = self.jitsi_input.text().strip() or None
 
         max_upload_mb_text = self.max_upload_mb_input.text().strip()
         max_upload_size_bytes = None
@@ -84,6 +92,7 @@ class ServerSettingsPage(QWidget):
                 display_name=display_name,
                 upload_root=upload_root,
                 max_upload_size_bytes=max_upload_size_bytes,
+                jitsi_base_url=jitsi_base_url,
             )
         except httpx.HTTPError as exc:
             self.status_label.setText(_friendly_error(exc))

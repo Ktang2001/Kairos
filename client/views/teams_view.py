@@ -25,7 +25,9 @@ from PySide6.QtWidgets import (
 
 from client.api_client import is_connection_error
 from client.viewmodels import permissions
+from client.viewmodels.meetings_viewmodel import MeetingsViewModel
 from client.viewmodels.teams_viewmodel import MAX_TEAM_NAME_LENGTH, TeamsViewModel
+from client.views.meeting_dialog import NewMeetingDialog
 from client.views.widgets import ElidedLabel, ErrorLabel
 from shared.account_rules import MAX_EMAIL_LENGTH
 
@@ -49,9 +51,15 @@ class TeamsView(QWidget):
     TeamsViewModel holds the logic.
     """
 
-    def __init__(self, viewmodel: TeamsViewModel, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        viewmodel: TeamsViewModel,
+        parent: QWidget | None = None,
+        meetings: MeetingsViewModel | None = None,
+    ) -> None:
         super().__init__(parent)
         self.viewmodel = viewmodel
+        self.meetings = meetings
         #: Asks the user to confirm a destructive action. Replaced in tests.
         self.confirm: Callable[[str, str], bool] = lambda title, question: ask_yes_no(
             self, title, question
@@ -101,6 +109,8 @@ class TeamsView(QWidget):
         self.make_lead_button = QPushButton("Make selected the lead")
         self.delete_team_button = QPushButton("Delete team")
         self.leave_team_button = QPushButton("Leave team")
+        #: Members only: a team meeting is held in the team's chat.
+        self.new_meeting_button = QPushButton("New team meeting...")
 
         rename_row = QHBoxLayout()
         rename_row.addWidget(self.rename_input)
@@ -128,6 +138,7 @@ class TeamsView(QWidget):
         detail.addWidget(self.lead_label)
         detail.addWidget(QLabel("Members"))
         detail.addWidget(self.members_list)
+        detail.addWidget(self.new_meeting_button)
         detail.addWidget(self.manage_panel)
         detail.addWidget(self.leave_team_button)
 
@@ -153,6 +164,7 @@ class TeamsView(QWidget):
             self.make_lead_button,
             self.delete_team_button,
             self.leave_team_button,
+            self.new_meeting_button,
         ]
 
         # ------------------------------------------------------- wiring
@@ -169,6 +181,9 @@ class TeamsView(QWidget):
         self.make_lead_button.clicked.connect(self._make_lead)
         self.delete_team_button.clicked.connect(self._delete)
         self.leave_team_button.clicked.connect(self._leave)
+        self.new_meeting_button.clicked.connect(self._new_meeting)
+        if meetings is not None:
+            meetings.error_changed.connect(self._show_meeting_error)
 
         viewmodel.teams_changed.connect(self._show_teams)
         viewmodel.team_changed.connect(self._show_team)
@@ -257,6 +272,9 @@ class TeamsView(QWidget):
         if team is not None:
             self.manage_panel.setVisible(permissions.can_manage_team(me, team))
             self.leave_team_button.setVisible(permissions.can_leave_team(me, team))
+            self.new_meeting_button.setVisible(
+                self.meetings is not None and permissions.is_member(me, team)
+            )
         self._update_member_buttons()
 
     def _update_member_buttons(self) -> None:
@@ -353,6 +371,29 @@ class TeamsView(QWidget):
     #: Set by the home screen when its offline banner already reports
     #: "can't reach the server", so this screen doesn't say it a second time.
     connection_errors_shown_elsewhere = False
+
+    def _new_meeting(self) -> None:
+        """Start or schedule a meeting for the selected team."""
+        team = self.viewmodel.team
+        if team is None or self.meetings is None:
+            return
+        dialog = NewMeetingDialog(self, default_title=f"{team['name']} meeting")
+        if dialog.exec() != NewMeetingDialog.DialogCode.Accepted:
+            return
+        self.meetings.create_for_team(
+            team["id"],
+            title=dialog.result_title,
+            starts_at=dialog.result_starts_at,
+            duration_minutes=dialog.result_duration_minutes,
+            client_token=dialog.result_client_token,
+            reminder_minutes=dialog.result_reminder_minutes,
+        )
+
+    def _show_meeting_error(self, message: str) -> None:
+        # The meetings view model is shared with other pages: only show what
+        # happened while this page is the one on screen.
+        if self.isVisible():
+            self._show_error(message)
 
     def _show_error(self, message: str) -> None:
         """Show an error, unless it is a connection error the offline banner already shows."""

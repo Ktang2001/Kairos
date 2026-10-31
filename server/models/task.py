@@ -39,7 +39,14 @@ class Task(Base):
     #: The first day of work. Never after ``due_date`` (checked by the schemas
     #: and ``task_service``).
     start_date: Mapped[date | None]
+    #: The calendar day it is due, in the time zone of whoever set it. What
+    #: the Gantt chart and the date checks use.
     due_date: Mapped[date | None]
+    #: The exact moment it is due (naive UTC): ``due_date`` at the time they
+    #: chose, 11:59 PM unless set. What "overdue" is judged by, and what each
+    #: person sees converted to their own time zone. Set whenever ``due_date``
+    #: is (``task_service``).
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     #: A ``shared.statuses.TaskStatus`` value.
     status: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

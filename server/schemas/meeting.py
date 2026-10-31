@@ -8,7 +8,15 @@ bare "14:00" would be read differently by each.
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated
 
-from pydantic import AwareDatetime, BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from server.schemas.user import UserOut, to_user_out
 from shared.meetings import (
@@ -16,6 +24,7 @@ from shared.meetings import (
     MAX_DURATION_MINUTES,
     MAX_MEETING_TITLE_LENGTH,
     MIN_DURATION_MINUTES,
+    REMINDER_CHOICES,
     MeetingResponse,
     MeetingState,
 )
@@ -48,6 +57,45 @@ class MeetingCreate(BaseModel):
     #: Sending the same token again returns the meeting already made, so a
     #: double-click or a retry after a timeout never makes two meetings.
     client_token: str | None = Field(default=None, max_length=MAX_CLIENT_TOKEN_LENGTH)
+    #: Reminders for everyone, in minutes before the start (REMINDER_CHOICES).
+    #: Stored sorted and without repeats.
+    reminder_minutes: list[int] = Field(default_factory=list, max_length=len(REMINDER_CHOICES))
+
+    @field_validator("reminder_minutes")
+    @classmethod
+    def _known_reminder_times(cls, value: list[int]) -> list[int]:
+        unknown = [minutes for minutes in value if minutes not in REMINDER_CHOICES]
+        if unknown:
+            raise ValueError(f"reminders can only be {', '.join(map(str, REMINDER_CHOICES))}")
+        return sorted(set(value))
+
+
+class MeetingUpdate(BaseModel):
+    """Body of PATCH /meetings/{id}: only the fields sent change. None of them
+    can be cleared (a meeting always has a title, a start and a length)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: Annotated[str, BeforeValidator(clean_display_text)] | None = Field(
+        default=None, min_length=1, max_length=MAX_MEETING_TITLE_LENGTH
+    )
+    starts_at: AwareDatetime | None = None
+    duration_minutes: int | None = Field(
+        default=None, ge=MIN_DURATION_MINUTES, le=MAX_DURATION_MINUTES
+    )
+    reminder_minutes: list[int] | None = Field(default=None, max_length=len(REMINDER_CHOICES))
+
+    @field_validator("reminder_minutes")
+    @classmethod
+    def _known_reminder_times(cls, value: list[int] | None) -> list[int] | None:
+        return MeetingCreate._known_reminder_times(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def _nothing_cleared(self) -> "MeetingUpdate":
+        for field in self.model_fields_set:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
 
 
 class RsvpIn(BaseModel):
@@ -82,9 +130,12 @@ class MeetingOut(BaseModel):
     starts_at: datetime
     ends_at: datetime
     duration_minutes: int
+    #: The host's reminders for everyone, minutes before the start.
+    reminder_minutes: list[int]
     host: UserOut
     state: MeetingState
     cancelled_at: datetime | None
+    created_at: datetime
     has_ended: bool
     is_host: bool
     can_cancel: bool
@@ -126,9 +177,11 @@ def to_meeting_out(
         starts_at=as_utc(meeting.starts_at),
         ends_at=as_utc(meeting.ends_at),
         duration_minutes=meeting.duration_minutes,
+        reminder_minutes=list(meeting.reminder_minutes or []),
         host=to_user_out(meeting.host),
         state=MeetingState.CANCELLED if meeting.cancelled_at else MeetingState.SCHEDULED,
         cancelled_at=as_utc(meeting.cancelled_at),
+        created_at=as_utc(meeting.created_at),
         has_ended=meeting.ends_at <= now,
         is_host=meeting.host_user_id == viewer.id,
         can_cancel=can_cancel,

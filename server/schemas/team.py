@@ -53,6 +53,9 @@ class TeamSummary(BaseModel):
     lead: UserOut
     member_count: int
     created_at: datetime
+    #: Whether the caller is on the team (admins see every team, and can't do
+    #: member-only things -- like start a team meeting -- in the others).
+    is_member: bool = True
 
 
 class TeamOut(BaseModel):
@@ -65,14 +68,16 @@ class TeamOut(BaseModel):
     created_at: datetime
 
 
-def to_team_summary(team: "Team") -> TeamSummary:
-    """Flatten an ORM ``Team`` into a list row: its lead and how many members."""
+def to_team_summary(team: "Team", viewer_id: int | None = None) -> TeamSummary:
+    """Flatten an ORM ``Team`` into a list row: its lead, how many members, and
+    whether ``viewer_id`` is one of them."""
     return TeamSummary(
         id=team.id,
         name=team.name,
         lead=to_user_out(team.lead),
         member_count=len(team.members),
         created_at=team.created_at,
+        is_member=viewer_id is None or any(member.id == viewer_id for member in team.members),
     )
 
 

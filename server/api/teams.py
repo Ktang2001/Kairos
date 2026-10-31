@@ -47,7 +47,10 @@ def list_teams(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> list[TeamSummary]:
     """Teams the caller belongs to (admins: every team), sorted by name."""
-    return [to_team_summary(team) for team in team_service.list_teams_for(db, current_user)]
+    return [
+        to_team_summary(team, current_user.id)
+        for team in team_service.list_teams_for(db, current_user)
+    ]
 
 
 @router.get("/{team_id}", response_model=TeamOut)

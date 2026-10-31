@@ -6,7 +6,7 @@ today's date for the "now" line, the dependency arrows, and any arrow whose
 order the dates break.
 """
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -37,7 +37,10 @@ class GanttRow(BaseModel):
     estimated: bool
     #: 0-100. See ``gantt_service.task_progress``.
     progress: int
-    #: The end date has passed and the work is not done.
+    #: The exact deadline (UTC), if it has one, for the hover text: the bar
+    #: itself is drawn by whole days.
+    due_at: datetime | None = None
+    #: The deadline has passed and the work is not done.
     overdue: bool
     #: Tasks this one waits on (the chart's arrows point from them to it).
     #: Always empty for subtasks.

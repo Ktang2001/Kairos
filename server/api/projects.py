@@ -5,6 +5,8 @@ Permission rules live in ``server.services.project_service`` and
 ``task_service``; refusals become HTTP errors via ``server.api.errors``.
 """
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session as OrmSession
 
@@ -15,7 +17,7 @@ from server.models.user import User
 from server.schemas.gantt import GanttOut
 from server.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate, to_project_out
 from server.schemas.task import TaskCreate, TaskDetail, TaskOut, to_task_detail, to_task_out
-from server.services import gantt_service, project_service, task_service
+from server.services import dashboard_service, gantt_service, project_service, task_service
 from shared.statuses import TaskStatus
 
 router = APIRouter(tags=["projects"])
@@ -122,6 +124,7 @@ def create_task(
             assignee_id=payload.assignee_id,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            due_at=payload.due_at,
             status=payload.status,
         )
     except KNOWN_ERRORS as exc:
@@ -154,14 +157,20 @@ def list_tasks(
 @router.get("/projects/{project_id}/gantt", response_model=GanttOut)
 def get_project_gantt(
     project_id: int,
+    today: date | None = None,
     db: OrmSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> GanttOut:
     """Everything a Gantt chart of the project draws: one bar per scheduled task
     and subtask, dependency arrows, the date range, today, and any dependency
     whose dates are out of order. Team members and admins only.
+
+    ``today`` is the caller's own date, where the chart's today line goes;
+    without it, the hosting computer's.
     """
     try:
-        return gantt_service.get_project_gantt(db, project_id, current_user)
+        # Checked here (a wrong clock is a 422); left to the chart when not sent.
+        day = dashboard_service.viewer_today(today) if today is not None else None
+        return gantt_service.get_project_gantt(db, project_id, current_user, today=day)
     except KNOWN_ERRORS as exc:
         raise http_error(exc) from None

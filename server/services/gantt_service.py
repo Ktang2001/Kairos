@@ -5,7 +5,7 @@ client can draw. Who may see it is the project's rule: the team's members and
 admins (``project_service.get_visible_project``).
 """
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session as OrmSession
 
@@ -13,9 +13,11 @@ from server.models.subtask import Subtask
 from server.models.task import Task
 from server.models.user import User
 from server.schemas.gantt import GanttOut, GanttRow, ScheduleConflict
+from server.schemas.meeting import as_utc
 from server.schemas.user import to_user_out
 from server.services import project_service, task_service
 from server.services.dashboard_service import local_today
+from server.services.task_service import utcnow
 from shared.statuses import TaskStatus
 
 #: Progress shown for an in-progress task with no subtasks to count.
@@ -63,12 +65,19 @@ def _subtask_progress(status: str) -> int:
     return 0
 
 
-def _is_overdue(end: date | None, status: str, today: date) -> bool:
-    """Past its end date and not done."""
-    return end is not None and end < today and status != TaskStatus.DONE
+def _is_overdue(item: Task | Subtask, end: date | None, today: date, now: datetime) -> bool:
+    """Not done, and past its exact deadline (``due_at``, naive UTC) -- the same
+    moment for everyone, whatever their time zone. A bar with no deadline
+    (only a start date, so an estimated end) is late once that end day has
+    passed."""
+    if item.status == TaskStatus.DONE:
+        return False
+    if item.due_at is not None:
+        return item.due_at < now
+    return end is not None and end < today
 
 
-def _task_row(task: Task, today: date) -> GanttRow:
+def _task_row(task: Task, today: date, now: datetime) -> GanttRow:
     """A task's bar."""
     start, end, estimated = bar_dates(task.start_date, task.due_date)
     return GanttRow(
@@ -82,12 +91,13 @@ def _task_row(task: Task, today: date) -> GanttRow:
         end=end,
         estimated=estimated,
         progress=task_progress(task),
-        overdue=_is_overdue(end, task.status, today),
+        due_at=as_utc(task.due_at),
+        overdue=_is_overdue(task, end, today, now),
         depends_on=[other.id for other in task.depends_on],
     )
 
 
-def _subtask_row(subtask: Subtask, today: date) -> GanttRow:
+def _subtask_row(subtask: Subtask, today: date, now: datetime) -> GanttRow:
     """A subtask's bar."""
     start, end, estimated = bar_dates(subtask.start_date, subtask.due_date)
     return GanttRow(
@@ -101,7 +111,8 @@ def _subtask_row(subtask: Subtask, today: date) -> GanttRow:
         end=end,
         estimated=estimated,
         progress=_subtask_progress(subtask.status),
-        overdue=_is_overdue(end, subtask.status, today),
+        due_at=as_utc(subtask.due_at),
+        overdue=_is_overdue(subtask, end, today, now),
         depends_on=[],
     )
 
@@ -124,11 +135,18 @@ def _conflicts(tasks: list[Task]) -> list[ScheduleConflict]:
     return found
 
 
-def get_project_gantt(db: OrmSession, project_id: int, actor: User) -> GanttOut:
-    """The Gantt chart for one project. Raises ProjectNotFound if the actor may not see it."""
+def get_project_gantt(
+    db: OrmSession, project_id: int, actor: User, *, today: date | None = None
+) -> GanttOut:
+    """The Gantt chart for one project. Raises ProjectNotFound if the actor may not see it.
+
+    ``today`` is the viewer's own date (``dashboard_service.viewer_today``);
+    without it, the hosting computer's.
+    """
     project, _ = project_service.get_visible_project(db, project_id, actor)
     tasks = task_service.load_project_tasks(db, project.id)
-    today = local_today()
+    today = today or local_today()
+    now = utcnow()
 
     rows: list[GanttRow] = []
     unscheduled: list[GanttRow] = []
@@ -138,10 +156,10 @@ def get_project_gantt(db: OrmSession, project_id: int, actor: User) -> GanttOut:
         return (start is None, start or date.min, task.id)
 
     for task in sorted(tasks, key=start_order):
-        row = _task_row(task, today)
+        row = _task_row(task, today, now)
         (rows if row.start is not None else unscheduled).append(row)
         for subtask in task.subtasks:
-            sub_row = _subtask_row(subtask, today)
+            sub_row = _subtask_row(subtask, today, now)
             (rows if sub_row.start is not None else unscheduled).append(sub_row)
 
     return GanttOut(

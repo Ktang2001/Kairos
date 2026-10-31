@@ -1,4 +1,14 @@
-from client.views.dashboard_page import ClockWidget, DashboardPage
+from datetime import UTC, datetime, timedelta
+
+from PySide6.QtCore import QDate
+
+from client.views.dashboard_page import (
+    DEADLINE_AND_MEETING_BACKGROUND,
+    MEETING_BACKGROUND,
+    ClockWidget,
+    DashboardPage,
+)
+from tests.client.meeting_data import make_meeting
 
 
 def test_dashboard_starts_with_empty_state_panels(qtbot) -> None:
@@ -8,7 +18,8 @@ def test_dashboard_starts_with_empty_state_panels(qtbot) -> None:
     assert page.due_dates_panel.list_widget.count() == 1
     assert "No due dates" in page.due_dates_panel.list_widget.item(0).text()
     assert page.tasks_panel.list_widget.count() == 1
-    assert page.meetings_panel.list_widget.count() == 1
+    assert page.meetings_panel.list_widget.count() == 0
+    assert not page.meetings_panel.empty_label.isHidden()
     assert page.stat_tasks.value_label.text() == "—"
 
 
@@ -246,3 +257,172 @@ def test_subtasks_assigned_to_me_join_my_figures_and_deadlines(qtbot) -> None:
         "Nov 04: Launch (Website)",
     ]
     assert page.calendar.dateTextFormat(QDate(2026, 11, 3)).background().color().alpha() > 0
+
+
+# ------------------------------------------------------------------ meetings
+
+
+def _with_meetings(*meetings: dict) -> dict:
+    data = _data()
+    data["overview"]["upcoming_meetings"] = len(meetings)
+    data["meetings"] = list(meetings)
+    return data
+
+
+def _local_noon(year: int, month: int, day: int) -> datetime:
+    """Noon on that day here, so the local calendar day is unambiguous."""
+    return datetime(year, month, day, 12, 0).astimezone()
+
+
+def test_upcoming_meetings_fill_the_tile_and_the_list(qtbot) -> None:
+    page = DashboardPage()
+    qtbot.addWidget(page)
+
+    page.show_data(_with_meetings(make_meeting(id=1), make_meeting(id=2, title="Retro")))
+
+    assert page.stat_meetings.value_label.text() == "2"
+    assert set(page.meetings_panel.cards) == {1, 2}
+    assert page.meetings_panel.cards[2].title_label.full_text == "Retro"
+
+
+def test_a_server_without_meetings_still_works(qtbot) -> None:
+    page = DashboardPage()
+    qtbot.addWidget(page)
+
+    page.show_data(_data())
+
+    assert page.stat_meetings.value_label.text() == "0"
+    assert page.meetings_panel.cards == {}
+
+
+def test_meeting_days_are_blue_and_shared_days_purple(qtbot) -> None:
+    page = DashboardPage()
+    qtbot.addWidget(page)
+
+    page.show_data(
+        _with_meetings(
+            make_meeting(id=1, starts=_local_noon(2026, 11, 4)),  # also a deadline
+            make_meeting(id=2, starts=_local_noon(2026, 11, 9)),
+        )
+    )
+
+    shared = page.calendar.dateTextFormat(QDate(2026, 11, 4))
+    meeting_only = page.calendar.dateTextFormat(QDate(2026, 11, 9))
+    assert shared.background().color() == DEADLINE_AND_MEETING_BACKGROUND
+    assert meeting_only.background().color() == MEETING_BACKGROUND
+    assert meeting_only.fontWeight() > 400
+
+
+def test_a_new_load_unmarks_old_meeting_days(qtbot) -> None:
+    page = DashboardPage()
+    qtbot.addWidget(page)
+    page.show_data(_with_meetings(make_meeting(id=2, starts=_local_noon(2026, 11, 9))))
+
+    page.show_data(_with_meetings())
+
+    assert page.calendar.dateTextFormat(QDate(2026, 11, 9)).fontWeight() <= 400
+
+
+def test_without_meeting_actions_there_is_no_new_meeting_button(qtbot) -> None:
+    page = DashboardPage()
+    qtbot.addWidget(page)
+
+    assert page.new_meeting_button.isHidden()
+
+
+def test_the_month_arrows_are_text_in_the_themes_colour(qtbot) -> None:
+    # Qt's own arrow icons are black, nearly invisible on the dark theme.
+    from PySide6.QtWidgets import QToolButton
+
+    page = DashboardPage()
+    qtbot.addWidget(page)
+
+    for name, arrow in (("qt_calendar_prevmonth", "‹"), ("qt_calendar_nextmonth", "›")):
+        button = page.calendar.findChild(QToolButton, name)
+        assert button.text() == arrow
+        assert button.icon().isNull()
+
+
+# ------------------------------------------------------------ exact deadlines
+
+
+def _due_in(**delta) -> tuple[str, datetime]:
+    """An API ``due_at`` this far from now, and the same moment here."""
+    moment = (datetime.now().astimezone() + timedelta(**delta)).replace(second=0, microsecond=0)
+    return moment.astimezone(UTC).isoformat(), moment
+
+
+def _task(title: str, due_at: str, moment: datetime) -> dict:
+    return {
+        "id": hash(title) % 1000,
+        "title": title,
+        "project_id": 5,
+        "project_name": "Website",
+        "status": "todo",
+        "due_date": moment.date().isoformat(),
+        "due_at": due_at,
+    }
+
+
+def test_a_deadline_that_passed_an_hour_ago_is_overdue_even_today(qtbot) -> None:
+    from client.views.time_text import show_due
+
+    page = DashboardPage()
+    qtbot.addWidget(page)
+    past_at, past = _due_in(hours=-1)
+    later_at, later = _due_in(days=1)
+
+    page.show_data(
+        _data(upcoming=[_task("Passed", past_at, past), _task("Later", later_at, later)])
+    )
+
+    lines = [
+        page.due_dates_panel.list_widget.item(i).text()
+        for i in range(page.due_dates_panel.list_widget.count())
+    ]
+    passed = show_due({"due_at": past_at}, year=False)
+    upcoming = show_due({"due_at": later_at}, year=False)
+    assert lines == [f"OVERDUE - {passed}: Passed (Website)", f"{upcoming}: Later (Website)"]
+    # Marked on this computer's own day for each deadline.
+    for moment in (past, later):
+        day = QDate(moment.year, moment.month, moment.day)
+        assert page.calendar.dateTextFormat(day).fontWeight() > 400
+
+
+# ------------------------------------------------------------ selected day
+
+
+def test_the_selected_day_lists_its_deadlines_and_meetings(qtbot) -> None:
+    page = DashboardPage()
+    qtbot.addWidget(page)
+    start = datetime(2026, 11, 4, 15, 0).astimezone()
+    page.show_data(_with_meetings(make_meeting(starts=start.astimezone(UTC), title="Stand-up")))
+
+    page.calendar.setSelectedDate(QDate(2026, 11, 4))
+
+    text = page.day_label.text()
+    assert text.startswith("Wed, Nov 04: ")
+    assert "Due end of day: Launch (Website)" in text
+    assert "Meeting 3:00 PM" in text and "Stand-up" in text
+
+
+def test_a_quiet_day_says_so(qtbot) -> None:
+    page = DashboardPage()
+    qtbot.addWidget(page)
+    page.show_data(_data())
+
+    page.calendar.setSelectedDate(QDate(2026, 11, 10))
+
+    assert page.day_label.text() == "Tue, Nov 10: nothing due, no meetings."
+
+
+def test_team_meetings_are_only_offered_for_teams_youre_on(qtbot) -> None:
+    from client.viewmodels.meetings_viewmodel import MeetingsViewModel
+
+    page = DashboardPage(meetings=MeetingsViewModel(client=None))
+    qtbot.addWidget(page)
+    page.show()
+
+    page._ask_for_team_meeting([{"id": 1, "name": "Alpha", "is_member": False}])
+
+    assert "not on any teams" in page.error_label.text()

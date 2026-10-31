@@ -139,6 +139,7 @@ def create_subtask(
             assignee_id=payload.assignee_id,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            due_at=payload.due_at,
             status=payload.status,
         )
     except KNOWN_ERRORS as exc:
